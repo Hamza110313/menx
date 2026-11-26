@@ -1,0 +1,6 @@
+{
+  "name": "Solaris Bay: City Crime",
+  "description": "A 3D open-world action-adventure game set in Solaris Bay with drivable vehicles, story missions, police pursuits, dynamic weather, and persistent saves.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
