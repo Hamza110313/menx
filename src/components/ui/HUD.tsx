@@ -16,6 +16,7 @@ import {
   Target,
   Users,
   Wind,
+  Zap,
 } from 'lucide-react';
 import { MISSIONS, PLAYABLE_CHARACTERS, WEAPONS } from '../../lib/gameConfig';
 import { gameInput } from '../../lib/inputState';
@@ -33,6 +34,7 @@ export function HUD() {
   const screen = useGameStore((s) => s.screen);
   const activeModal = useGameStore((s) => s.activeModal);
   const activeCharacterId = useGameStore((s) => s.activeCharacterId);
+  const outfitId = useGameStore((s) => s.outfitId);
   const health = useGameStore((s) => s.health);
   const armor = useGameStore((s) => s.armor);
   const stamina = useGameStore((s) => s.stamina);
@@ -62,7 +64,16 @@ export function HUD() {
   const activeMission = activeMissionId ? MISSIONS.find((m) => m.id === activeMissionId) : null;
   const activeStep = activeMission?.steps[activeMissionStepIndex] ?? null;
   const activeHero = PLAYABLE_CHARACTERS[activeCharacterId];
-  const weaponOrder: WeaponId[] = ['unarmed', 'pistol', 'rifle', 'shotgun'];
+  const isParagon = activeCharacterId === 'paragon' || outfitId === 'paragon_suit';
+  const isSunburst = activeCharacterId === 'sunburst' || outfitId === 'sunburst_nika';
+  const isNaruto =
+    activeCharacterId === 'naruto' ||
+    outfitId === 'naruto_sage_cloak' ||
+    outfitId === 'naruto_tracksuit';
+  const isBatman = activeCharacterId === 'batman' || outfitId === 'dark_knight';
+  const isGoku = activeCharacterId === 'goku' || outfitId === 'goku_damaged_gi';
+  const isSuperHero = isSunburst || isParagon || isBatman || isNaruto || isGoku;
+  const weaponOrder: WeaponId[] = ['unarmed', 'pistol', 'smg', 'rifle', 'shotgun', 'rpg', 'sword'];
 
   return (
     <div className="pointer-events-none fixed inset-0 z-10 flex flex-col justify-between p-3 sm:p-5">
@@ -130,11 +141,12 @@ export function HUD() {
             <button
               type="button"
               onClick={() => setActiveModal('inventory')}
-              title="Gear & Outfits (I)"
-              className="flex h-8 w-8 items-center justify-center rounded-md border border-white/15 bg-zinc-950/88 text-zinc-200 hover:bg-zinc-800"
-              aria-label="Gear & Outfits"
+              title="Open Inventory, Character, Weapons & Rides (I)"
+              className="flex h-8 items-center gap-1.5 rounded-md border border-emerald-400/40 bg-zinc-950/88 px-2.5 text-xs font-medium text-emerald-300 hover:bg-zinc-800 whitespace-nowrap shrink-0"
+              aria-label="Open Inventory"
             >
               <Backpack className="h-3.5 w-3.5 text-emerald-400" />
+              <span>Inventory</span>
             </button>
             <button
               type="button"
@@ -155,21 +167,40 @@ export function HUD() {
               <Save className="h-3.5 w-3.5 text-cyan-400" />
             </button>
             {!telemetry.inVehicle && (
-              <button
-                type="button"
-                onClick={() => {
-                  gameInput.flyTogglePressed = true;
-                }}
-                title="Toggle Flight (H or double-tap Space)"
-                className={`flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium whitespace-nowrap shrink-0 transition-colors ${
-                  telemetry.isFlying
-                    ? 'border-cyan-400/60 bg-cyan-500 text-zinc-950 font-bold'
-                    : 'border-white/15 bg-zinc-950/88 text-cyan-300 hover:bg-zinc-800'
-                }`}
-              >
-                <Wind className="h-3.5 w-3.5" />
-                <span>{telemetry.isFlying ? 'Land (H)' : 'Fly (H)'}</span>
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    gameInput.flyTogglePressed = true;
+                  }}
+                  title="Toggle Flight (H or double-tap Space)"
+                  className={`flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium whitespace-nowrap shrink-0 transition-colors ${
+                    telemetry.isFlying
+                      ? 'border-cyan-400/60 bg-cyan-500 text-zinc-950 font-bold'
+                      : 'border-white/15 bg-zinc-950/88 text-cyan-300 hover:bg-zinc-800'
+                  }`}
+                >
+                  <Wind className="h-3.5 w-3.5" />
+                  <span>{telemetry.isFlying ? 'Land (H)' : 'Fly (H)'}</span>
+                </button>
+                {isSuperHero && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      gameInput.shockwavePressed = true;
+                    }}
+                    title="Kinetic Shockwave Slam (F)"
+                    className={`flex h-8 items-center gap-1 rounded-md border px-2.5 text-xs font-semibold whitespace-nowrap shrink-0 ${
+                      isSunburst
+                        ? 'border-cyan-400/50 bg-zinc-950/88 text-cyan-200 hover:bg-cyan-950/60'
+                        : 'border-rose-500/45 bg-zinc-950/88 text-rose-300 hover:bg-rose-950/70'
+                    }`}
+                  >
+                    <Zap className={`h-3.5 w-3.5 ${isSunburst ? 'text-cyan-300' : 'text-rose-400'}`} />
+                    <span>Slam (F)</span>
+                  </button>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -303,10 +334,27 @@ export function HUD() {
                       }`}
                     >
                       <div className="text-[10px] leading-none">
-                        {spec.slot}·{wid === 'unarmed' ? 'Fist' : wid === 'pistol' ? '9mm' : wid === 'rifle' ? 'M4' : '12g'}
+                        {spec.slot}·
+                        {wid === 'unarmed'
+                          ? isSunburst
+                            ? 'Punch'
+                            : isParagon
+                              ? 'Heat'
+                              : 'Fist'
+                          : wid === 'pistol'
+                            ? '9mm'
+                            : wid === 'smg'
+                              ? 'MP5'
+                              : wid === 'rifle'
+                                ? 'M4'
+                                : wid === 'shotgun'
+                                  ? '12g'
+                                  : wid === 'sword'
+                                    ? 'Blade'
+                                    : 'RPG'}
                       </div>
                       <div className="mt-0.5 font-mono-num text-[9px] opacity-85">
-                        {wid === 'unarmed' ? '∞' : ammo}
+                        {wid === 'unarmed' || wid === 'sword' ? '∞' : ammo}
                       </div>
                     </button>
                   );
@@ -368,16 +416,29 @@ export function HUD() {
           <span aria-hidden="true">·</span>
           <span>G Map</span>
           <span aria-hidden="true">·</span>
+          <span>I Inventory</span>
+          <span aria-hidden="true">·</span>
           <span>Tab Hero</span>
           {!telemetry.inVehicle ? (
             <>
               <span aria-hidden="true">·</span>
-              <span>H / 2×Space Fly · 1-4 Weapon · C Crouch · Click/Q Fire</span>
+              <span>
+                {isSunburst
+                  ? 'H / 2×Space Fly · Click/Q Sonic Punch · F Slam · 1-6 Weapons'
+                  : isParagon
+                    ? 'H / 2×Space Fly · Click/Q Heat Vision · F Slam · 1-6 Weapons'
+                    : 'H / 2×Space Fly · 1-6 Weapon · C Crouch · Click/Q Fire'}
+              </span>
             </>
           ) : telemetry.vehicleClass === 'helicopter' ? (
             <>
               <span aria-hidden="true">·</span>
               <span>Space Climb · Ctrl Descend</span>
+            </>
+          ) : telemetry.vehicleClass === 'horse' ? (
+            <>
+              <span aria-hidden="true">·</span>
+              <span>Shift Gallop · Space Halt · E Dismount</span>
             </>
           ) : (
             <>
@@ -458,7 +519,7 @@ export function HUD() {
                   />
                 </div>
               </div>
-              {telemetry.vehicleClass !== 'bicycle' && (
+              {telemetry.vehicleClass !== 'bicycle' && telemetry.vehicleClass !== 'horse' && (
                 <div className="flex items-center gap-2">
                   <span className="w-7 text-[10px] font-semibold text-amber-400">FUEL</span>
                   <div className="h-1.5 flex-1 overflow-hidden rounded-sm bg-zinc-800">

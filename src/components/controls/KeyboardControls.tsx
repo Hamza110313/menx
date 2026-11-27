@@ -100,7 +100,10 @@ export function KeyboardControls() {
           if (!e.repeat) gameInput.interactPressed = true;
           break;
         case 'KeyF':
-          if (!e.repeat) gameInput.repairOrActionPressed = true;
+          if (!e.repeat) {
+            gameInput.repairOrActionPressed = true;
+            gameInput.shockwavePressed = true;
+          }
           break;
         case 'KeyQ':
           if (!e.repeat) gameInput.firePressed = true;
@@ -125,10 +128,19 @@ export function KeyboardControls() {
           if (!e.repeat) store.selectWeapon('pistol');
           break;
         case 'Digit3':
-          if (!e.repeat) store.selectWeapon('rifle');
+          if (!e.repeat) store.selectWeapon('smg');
           break;
         case 'Digit4':
+          if (!e.repeat) store.selectWeapon('rifle');
+          break;
+        case 'Digit5':
           if (!e.repeat) store.selectWeapon('shotgun');
+          break;
+        case 'Digit6':
+          if (!e.repeat) store.selectWeapon('rpg');
+          break;
+        case 'Digit7':
+          if (!e.repeat) store.selectWeapon('sword');
           break;
         case 'KeyG':
           if (!e.repeat) {

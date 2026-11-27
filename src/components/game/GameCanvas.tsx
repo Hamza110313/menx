@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { buildSolarisCity } from '../../lib/cityBuilder';
 import { audioEngine } from '../../lib/audio';
 import {
@@ -21,6 +25,7 @@ import {
   type CatRig,
   type CharacterRig,
   type CharacterTextureBundle,
+  type VehicleDecalBundle,
   type VehicleRig,
 } from '../../lib/models';
 import { getGroundHeightAt, resolveCircleWorldCollision } from '../../lib/physics';
@@ -28,8 +33,17 @@ import { createAtmosphericSkyDome } from '../../lib/sky';
 import {
   createCamoTextures,
   createContactShadowTexture,
+  createDarkKnightEmblemTexture,
   createDenimTextures,
+  createDesertCamoTextures,
+  createExpressHoodLiveryTexture,
+  createExpressSideLiveryTexture,
   createHoodieTextures,
+  createMuscle01DecalTexture,
+  createNarutoBackCrestTexture,
+  createParagonChestEmblemTexture,
+  createPoliceDoorDecalTexture,
+  createSkylineR34Textures,
 } from '../../lib/textures';
 import { useGameStore } from '../../store/gameStore';
 import type { LiveTelemetry, WeaponId } from '../../types/game';
@@ -91,6 +105,9 @@ interface PedestrianAgent {
   walkPhase: number;
   speed: number;
   turnTimer: number;
+  hp: number;
+  active: boolean;
+  looted: boolean;
 }
 
 interface BlackCatAgent {
@@ -144,7 +161,16 @@ const _sunColorSunset = new THREE.Color('#fb923c');
 const _sunColorNight = new THREE.Color('#60a5fa');
 const _hemiSkyDay = new THREE.Color('#93c5fd');
 const _hemiSkyNight = new THREE.Color('#1e293b');
+const _rimDayCol = new THREE.Color('#38bdf8');
+const _rimSunsetCol = new THREE.Color('#fb7185');
+const _rimNightCol = new THREE.Color('#3b82f6');
 const _skidDummy = new THREE.Object3D();
+const _splashDummy = new THREE.Object3D();
+const _hvEyePos = new THREE.Vector3();
+const _hvTargetPos = new THREE.Vector3();
+const _hvDir = new THREE.Vector3();
+const _hvMid = new THREE.Vector3();
+const _hvUp = new THREE.Vector3(0, 1, 0);
 
 export function GameCanvas() {
   const mountRef = useRef<HTMLDivElement | null>(null);
@@ -182,11 +208,21 @@ export function GameCanvas() {
       return;
     }
 
+    const initW = container.clientWidth || window.innerWidth;
+    const initH = container.clientHeight || window.innerHeight;
+    let lastGraphicsQuality = useGameStore.getState().settings.graphicsQuality;
+
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.05;
-    renderer.setPixelRatio(isSoftwareGl ? 1 : Math.min(window.devicePixelRatio, 2));
-    renderer.setSize(container.clientWidth || window.innerWidth, container.clientHeight || window.innerHeight);
+    renderer.toneMappingExposure = 0.78;
+    renderer.setPixelRatio(
+      isSoftwareGl
+        ? 1
+        : lastGraphicsQuality === 'medium'
+          ? 1.0
+          : Math.min(window.devicePixelRatio, 1.35)
+    );
+    renderer.setSize(initW, initH);
     renderer.shadowMap.enabled = !isSoftwareGl;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
@@ -210,29 +246,40 @@ export function GameCanvas() {
     const skyDome = createAtmosphericSkyDome();
     scene.add(skyDome.mesh);
 
-    const camera = new THREE.PerspectiveCamera(
-      62,
-      (container.clientWidth || window.innerWidth) / (container.clientHeight || window.innerHeight),
-      0.2,
-      760
-    );
+    const camera = new THREE.PerspectiveCamera(62, initW / initH, 0.2, 760);
 
     const pmrem = new THREE.PMREMGenerator(renderer);
     const envRT = pmrem.fromScene(new RoomEnvironment(), 0.04);
     scene.environment = envRT.texture;
+    scene.environmentIntensity = 0.62;
     pmrem.dispose();
 
+    let composer: EffectComposer | null = null;
+    let bloomTarget: THREE.WebGLRenderTarget | null = null;
+    let bloomPass: UnrealBloomPass | null = null;
+    if (!isSoftwareGl) {
+      bloomTarget = new THREE.WebGLRenderTarget(initW, initH, {
+        type: THREE.HalfFloatType,
+        samples: 0,
+      });
+      composer = new EffectComposer(renderer, bloomTarget);
+      composer.addPass(new RenderPass(scene, camera));
+      bloomPass = new UnrealBloomPass(new THREE.Vector2(initW, initH), 0.14, 0.35, 0.96);
+      composer.addPass(bloomPass);
+      composer.addPass(new OutputPass());
+    }
+
     // 3. Balanced Warm/Cool 3-Point Outdoor Lighting Rig
-    const hemiLight = new THREE.HemisphereLight('#93c5fd', '#3f3f46', 0.72);
+    const hemiLight = new THREE.HemisphereLight('#93c5fd', '#3f3f46', 0.48);
     hemiLight.position.set(0, 120, 0);
     scene.add(hemiLight);
 
-    const sunLight = new THREE.DirectionalLight('#fff7ed', 1.85);
+    const sunLight = new THREE.DirectionalLight('#fff7ed', 1.22);
     sunLight.position.set(85, 130, 65);
     sunLight.castShadow = !isSoftwareGl;
-    sunLight.shadow.mapSize.width = 2048;
-    sunLight.shadow.mapSize.height = 2048;
-    const shadowBound = 95;
+    sunLight.shadow.mapSize.width = 1024;
+    sunLight.shadow.mapSize.height = 1024;
+    const shadowBound = 82;
     sunLight.shadow.camera.left = -shadowBound;
     sunLight.shadow.camera.right = shadowBound;
     sunLight.shadow.camera.top = shadowBound;
@@ -241,10 +288,11 @@ export function GameCanvas() {
     sunLight.shadow.camera.far = 340;
     sunLight.shadow.bias = -0.0005;
     sunLight.shadow.normalBias = 0.025;
+    sunLight.shadow.radius = 2;
     scene.add(sunLight);
     scene.add(sunLight.target);
 
-    const rimLight = new THREE.DirectionalLight('#38bdf8', 0.42);
+    const rimLight = new THREE.DirectionalLight('#38bdf8', 0.28);
     rimLight.position.set(-70, 55, -80);
     scene.add(rimLight);
 
@@ -255,12 +303,29 @@ export function GameCanvas() {
 
     const shadowTex = createContactShadowTexture();
     const camoTextures = createCamoTextures(maxAniso);
+    const desertCamoTextures = createDesertCamoTextures(maxAniso);
     const hoodieTextures = createHoodieTextures(maxAniso);
     const denimTextures = createDenimTextures(maxAniso);
+    const paragonEmblemTex = createParagonChestEmblemTexture(maxAniso);
+    const darkKnightEmblemTex = createDarkKnightEmblemTexture(maxAniso);
+    const uzumakiCrestTex = createNarutoBackCrestTexture(maxAniso);
     const charTextures: CharacterTextureBundle = {
       camo: camoTextures,
+      desertCamo: desertCamoTextures,
       hoodie: hoodieTextures,
       denim: denimTextures,
+      paragonEmblem: paragonEmblemTex,
+      darkKnightEmblem: darkKnightEmblemTex,
+      uzumakiCrest: uzumakiCrestTex,
+    };
+    const skylineR34Tex = createSkylineR34Textures(maxAniso);
+    const vehicleTextures: VehicleDecalBundle = {
+      policeDoor: createPoliceDoorDecalTexture(maxAniso),
+      muscle01: createMuscle01DecalTexture(maxAniso),
+      expressSide: createExpressSideLiveryTexture(maxAniso),
+      expressHood: createExpressHoodLiveryTexture(maxAniso),
+      skylineHood: skylineR34Tex.hoodMap,
+      skylineSide: skylineR34Tex.sideLiveryMap,
     };
 
     // 5. Tire Skid Marks, Sparks & Pre-allocated Bullet Tracers
@@ -356,6 +421,49 @@ export function GameCanvas() {
       tracerPool.push({ x1, y1, z1, x2, y2, z2, life: 0.085 });
     };
 
+    // Pre-allocated Paragon Twin Heat Vision Laser Beams & Kinetic Shockwave Ring
+    const heatBeamGeo = new THREE.CylinderGeometry(0.032, 0.048, 1, 8, 1, true);
+    const heatBeamMat = new THREE.MeshBasicMaterial({
+      color: '#ff2d20',
+      transparent: true,
+      opacity: 0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const heatBeamLeft = new THREE.Mesh(heatBeamGeo, heatBeamMat);
+    const heatBeamRight = new THREE.Mesh(heatBeamGeo, heatBeamMat);
+    heatBeamLeft.frustumCulled = false;
+    heatBeamRight.frustumCulled = false;
+    heatBeamLeft.visible = false;
+    heatBeamRight.visible = false;
+    const heatImpactSprite = new THREE.Sprite(
+      new THREE.SpriteMaterial({
+        map: city.glowSpriteTex,
+        color: '#ff4d2e',
+        transparent: true,
+        opacity: 0,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      })
+    );
+    heatImpactSprite.scale.set(2.2, 2.2, 1);
+    heatImpactSprite.visible = false;
+    scene.add(heatBeamLeft, heatBeamRight, heatImpactSprite);
+
+    const shockRingGeo = new THREE.RingGeometry(0.7, 1.15, 36);
+    shockRingGeo.rotateX(-Math.PI / 2);
+    const shockRingMat = new THREE.MeshBasicMaterial({
+      color: '#facc15',
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const shockRingMesh = new THREE.Mesh(shockRingGeo, shockRingMat);
+    shockRingMesh.visible = false;
+    scene.add(shockRingMesh);
+
     // 6. Mission Checkpoint Beacon & GPS / Taxi Cyan Beacon
     const missionBeaconGroup = new THREE.Group();
     const beaconRing = new THREE.Mesh(
@@ -411,27 +519,56 @@ export function GameCanvas() {
     gpsBeaconGroup.visible = false;
     scene.add(gpsBeaconGroup);
 
-    // 7. Rain Particle System
-    const rainCount = 1100;
-    const rainPositions = new Float32Array(rainCount * 3);
+    // 7. Slanted Rain Streaks & Ground Puddle Splashes
+    const rainCount = 700;
+    const rainSeeds = new Float32Array(rainCount * 3);
+    const rainVerts = new Float32Array(rainCount * 6);
     for (let i = 0; i < rainCount; i++) {
-      rainPositions[i * 3] = (Math.random() - 0.5) * 95;
-      rainPositions[i * 3 + 1] = Math.random() * 38;
-      rainPositions[i * 3 + 2] = (Math.random() - 0.5) * 95;
+      const rx = (Math.random() - 0.5) * 90;
+      const ry = Math.random() * 36;
+      const rz = (Math.random() - 0.5) * 90;
+      rainSeeds[i * 3] = rx;
+      rainSeeds[i * 3 + 1] = ry;
+      rainSeeds[i * 3 + 2] = rz;
+      rainVerts[i * 6] = rx;
+      rainVerts[i * 6 + 1] = ry;
+      rainVerts[i * 6 + 2] = rz;
+      rainVerts[i * 6 + 3] = rx + 0.16;
+      rainVerts[i * 6 + 4] = ry + 1.05;
+      rainVerts[i * 6 + 5] = rz + 0.08;
     }
     const rainGeo = new THREE.BufferGeometry();
-    rainGeo.setAttribute('position', new THREE.BufferAttribute(rainPositions, 3));
-    const rainMat = new THREE.PointsMaterial({
+    rainGeo.setAttribute('position', new THREE.BufferAttribute(rainVerts, 3));
+    const rainMat = new THREE.LineBasicMaterial({
       color: '#cbd5e1',
-      size: 0.26,
       transparent: true,
-      opacity: 0.58,
+      opacity: 0.44,
       depthWrite: false,
     });
-    const rainPoints = new THREE.Points(rainGeo, rainMat);
-    rainPoints.visible = false;
-    rainPoints.frustumCulled = false;
-    scene.add(rainPoints);
+    const rainLines = new THREE.LineSegments(rainGeo, rainMat);
+    rainLines.visible = false;
+    rainLines.frustumCulled = false;
+    scene.add(rainLines);
+
+    const SPLASH_COUNT = 72;
+    const splashGeo = new THREE.RingGeometry(0.14, 0.22, 12);
+    splashGeo.rotateX(-Math.PI / 2);
+    const splashMat = new THREE.MeshBasicMaterial({
+      color: '#e2e8f0',
+      transparent: true,
+      opacity: 0.36,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    const splashInst = new THREE.InstancedMesh(splashGeo, splashMat, SPLASH_COUNT);
+    splashInst.frustumCulled = false;
+    splashInst.visible = false;
+    const splashOffsets = Array.from({ length: SPLASH_COUNT }, (_, idx) => ({
+      dx: (Math.random() - 0.5) * 60,
+      dz: (Math.random() - 0.5) * 60,
+      phase: idx / SPLASH_COUNT,
+    }));
+    scene.add(splashInst);
 
     // 8. Player Character Rig
     const initStore = useGameStore.getState();
@@ -451,7 +588,7 @@ export function GameCanvas() {
       rotY: number,
       isPlayerOwned: boolean
     ) => {
-      const rig = createVehicleModel(specId, color, shadowTex, isSoftwareGl, isPlayerOwned, city.glowSpriteTex);
+      const rig = createVehicleModel(specId, color, shadowTex, isSoftwareGl, isPlayerOwned, city.glowSpriteTex, vehicleTextures);
       const spec = VEHICLE_SPECS[specId];
       const gy = spec.vehicleClass === 'boat' ? -0.35 : getGroundHeightAt(x, z);
       rig.group.position.set(x, gy, z);
@@ -496,21 +633,33 @@ export function GameCanvas() {
     spawnVehicle('parked_bike', 'viper_r1', '#f59e0b', 92, 14, -Math.PI / 2, false);
     spawnVehicle('parked_bmx', 'street_bmx', '#22c55e', 112, 12, -Math.PI * 0.4, false);
     spawnVehicle('parked_sedan', 'metro_lx', '#eab308', -92, 18, Math.PI, false);
-    spawnVehicle('parked_luxury', 'sovereign_gt', '#1e293b', 42, 16, -Math.PI / 2, false);
-    spawnVehicle('parked_truck', 'hauler_rig', '#d97706', -74, 142, Math.PI / 2, false);
+    spawnVehicle('parked_luxury', 'sovereign_gt', '#3f3f46', 42, 16, -Math.PI / 2, false);
+    spawnVehicle('parked_truck', 'hauler_rig', '#f8fafc', -74, 142, Math.PI / 2, false);
     spawnVehicle('parked_bus', 'metro_bus', '#0284c7', -83.8, -55, 0, false);
     spawnVehicle('parked_ems', 'ems_medic', '#f8fafc', 20, -52, 0, false);
     spawnVehicle('parked_super', 'apex_v12', '#06b6d4', -72, -48, 0, false);
     spawnVehicle('parked_pickup', 'sierra_dually', '#d6ceb8', -100, -96, Math.PI * 0.5, false);
-    spawnVehicle('parked_muscle', 'mustang_gt', '#b91c1c', 28, -14, Math.PI, false);
-    spawnVehicle('parked_polizei', 'interceptor', '#d4d4d8', 96, -104, -Math.PI / 2, false);
-    spawnVehicle('parked_heli', 'valkyrie_heli', '#1e293b', -198, 4, Math.PI / 2, false);
+    spawnVehicle('parked_muscle', 'mustang_gt', '#f97316', 28, -14, Math.PI, false);
+    spawnVehicle('parked_polizei', 'interceptor', '#f8fafc', 96, -104, -Math.PI / 2, false);
+    spawnVehicle('parked_heli', 'valkyrie_heli', '#f1f5f9', -198, 4, Math.PI / 2, false);
     spawnVehicle('parked_boat', 'marina_craft', '#f8fafc', 127, 222, Math.PI, false);
+    spawnVehicle('parked_sailboat', 'classic_sailboat', '#f8fafc', 136, 224, Math.PI, false);
+    spawnVehicle('parked_retro_80s', 'retro_sedan_80s', '#d4d4d8', -56, 18, Math.PI, false);
+    spawnVehicle('parked_shuttle_van', 'shuttle_van', '#8d9db6', 62, -16, 0, false);
+    spawnVehicle('parked_beetle', 'vintage_beetle', '#f43f5e', -118, 38, Math.PI / 3, false);
+    spawnVehicle('parked_biplane', 'red_baron_biplane', '#dc2626', -214, -22, Math.PI / 4, false);
+    spawnVehicle('parked_skyline_r34', 'skyline_r34', '#cfd4dc', -14, 18, Math.PI / 2, false);
+    spawnVehicle('parked_stallion_plaza', 'chestnut_stallion', '#8c441c', 14, 14, -Math.PI * 0.35, false);
+    spawnVehicle('parked_stallion_barn', 'chestnut_stallion', '#8c441c', -106, -118, Math.PI * 0.25, false);
+    spawnVehicle('parked_army_truck', 'sierra_dually', '#4b5332', 228, -104, -Math.PI * 0.5, false);
+    spawnVehicle('parked_tiger', 'tiger_tank', '#c2b280', 218, -118, Math.PI * 0.25, false);
 
     // 10. AI Traffic Vehicles (including Buses & Ambulances)
     const trafficSpecs = [
       'metro_lx',
+      'retro_sedan_80s',
       'titan_4x4',
+      'shuttle_van',
       'veloce_gt',
       'hauler_rig',
       'sierra_dually',
@@ -519,9 +668,9 @@ export function GameCanvas() {
       'ems_medic',
       'sovereign_gt',
     ];
-    const trafficColors = ['#e4e4e7', '#334155', '#1d4ed8', '#059669', '#d97706', '#991b1b', '#0284c7', '#f8fafc', '#18181b'];
+    const trafficColors = ['#e4e4e7', '#d4d4d8', '#334155', '#8d9db6', '#1d4ed8', '#059669', '#f8fafc', '#f97316', '#0284c7', '#f8fafc', '#3f3f46'];
     const trafficAgents: TrafficAgent[] = [];
-    for (let i = 0; i < 14; i++) {
+    for (let i = 0; i < 11; i++) {
       const axis: 'ns' | 'ew' = i % 2 === 0 ? 'ns' : 'ew';
       const dir: 1 | -1 = i % 4 < 2 ? 1 : -1;
       const roadIdx = (i * 2) % ROAD_CENTERS.length;
@@ -530,7 +679,7 @@ export function GameCanvas() {
       const along = -150 + ((i * 53) % 300);
       const specId = trafficSpecs[i % trafficSpecs.length];
       const color = trafficColors[i % trafficColors.length];
-      const rig = createVehicleModel(specId, color, shadowTex, isSoftwareGl, false, city.glowSpriteTex);
+      const rig = createVehicleModel(specId, color, shadowTex, isSoftwareGl, false, city.glowSpriteTex, vehicleTextures);
       const x = axis === 'ns' ? laneCoord : along;
       const z = axis === 'ns' ? along : laneCoord;
       rig.group.position.set(x, 0, z);
@@ -552,7 +701,7 @@ export function GameCanvas() {
     // 11. Police Pursuit Pool (4 Cruisers + 2 Armed Foot Officers + 1 Wanted-5 Police Helicopter)
     const policeAgents: PoliceAgent[] = [];
     for (let i = 0; i < 4; i++) {
-      const rig = createVehicleModel('interceptor', '#111827', shadowTex, isSoftwareGl, false, city.glowSpriteTex);
+      const rig = createVehicleModel('interceptor', '#f8fafc', shadowTex, isSoftwareGl, false, city.glowSpriteTex, vehicleTextures);
       rig.group.visible = false;
       scene.add(rig.group);
       policeAgents.push({
@@ -600,7 +749,7 @@ export function GameCanvas() {
     // 12. Pedestrians on Sidewalks & Story Mission Contacts
     const pedestrians: PedestrianAgent[] = [];
     const pedOutfits = PLAYER_OUTFITS.map((o) => o.id);
-    for (let i = 0; i < 24; i++) {
+    for (let i = 0; i < 20; i++) {
       const rig = createCharacterModel(pedOutfits[i % pedOutfits.length], shadowTex, true, charTextures);
       const roadC = ROAD_CENTERS[i % ROAD_CENTERS.length];
       const side = i % 2 === 0 ? 9.4 : -9.4;
@@ -616,6 +765,9 @@ export function GameCanvas() {
         walkPhase: Math.random() * 6,
         speed: 1.55 + (i % 4) * 0.25,
         turnTimer: 4 + Math.random() * 6,
+        hp: 100,
+        active: true,
+        looted: false,
       });
     }
 
@@ -689,12 +841,26 @@ export function GameCanvas() {
       aimHoldTimer: 0,
       fireCooldown: 0,
       muzzleTimer: 0,
+      heatVisionTimer: 0,
+      shockwaveTimer: 0,
+      shockwaveCooldown: 0,
+      divingSlam: false,
+      regenAccum: 0,
+      speedBoostTimer: 0,
+      lightningTimer: 7.5,
+      lightningFlash: 0,
       taxiTarget: null as { x: number; z: number; label: string } | null,
       taxiPayout: 0,
     };
 
     const handleUseItem = (ev: Event) => {
       const detail = (ev as CustomEvent<{ itemId: string }>).detail;
+      if (detail.itemId === 'energy_drink') {
+        sim.stamina = 100;
+        sim.speedBoostTimer = 20;
+        useGameStore.getState().pushToast('Solaris Surge Active', '+32% Sprint & Flight speed for 20s.', 'success');
+        return;
+      }
       if (!sim.activeVehicle) {
         if (detail.itemId === 'repair_kit' || detail.itemId === 'nitro_can') {
           useGameStore.getState().pushToast('Enter a Vehicle First', 'Item effect applies to your active vehicle.', 'warning');
@@ -717,6 +883,7 @@ export function GameCanvas() {
       const safePlayer = resolveCircleWorldCollision(detail.x, detail.z, 0.55, { allowWater: true });
       sim.activeVehicle = null;
       sim.isFlying = false;
+      sim.divingSlam = false;
       sim.px = safePlayer.x;
       sim.pz = safePlayer.z;
       sim.py = getGroundHeightAt(safePlayer.x, safePlayer.z);
@@ -796,9 +963,12 @@ export function GameCanvas() {
       camera.updateProjectionMatrix();
       renderer.setSize(w, h);
       const gq = useGameStore.getState().settings.graphicsQuality;
+      lastGraphicsQuality = gq;
       renderer.setPixelRatio(
         isSoftwareGl ? 1 : gq === 'medium' ? Math.min(window.devicePixelRatio, 1.25) : Math.min(window.devicePixelRatio, 2)
       );
+      if (composer) composer.setSize(w, h);
+      if (bloomPass) bloomPass.resolution.set(w, h);
     };
     window.addEventListener('resize', handleResize);
 
@@ -807,7 +977,7 @@ export function GameCanvas() {
 
     const syncPlayerVehicleModel = (specId: string, colorHex: string, spawnNearPlayer: boolean) => {
       scene.remove(playerPersonalCar.rig.group);
-      const newRig = createVehicleModel(specId, colorHex, shadowTex, isSoftwareGl, true, city.glowSpriteTex);
+      const newRig = createVehicleModel(specId, colorHex, shadowTex, isSoftwareGl, true, city.glowSpriteTex, vehicleTextures);
       const spec = VEHICLE_SPECS[specId];
       playerPersonalCar.specId = specId;
       playerPersonalCar.rig = newRig;
@@ -866,6 +1036,14 @@ export function GameCanvas() {
         sim.lastSessionId = store.gameSessionId;
         sim.activeVehicle = null;
         sim.isFlying = false;
+        sim.divingSlam = false;
+        sim.heatVisionTimer = 0;
+        sim.shockwaveTimer = 0;
+        sim.speedBoostTimer = 0;
+        heatBeamLeft.visible = false;
+        heatBeamRight.visible = false;
+        heatImpactSprite.visible = false;
+        shockRingMesh.visible = false;
         sim.px = store.playerPos.x;
         sim.py = store.playerPos.y;
         sim.pz = store.playerPos.z;
@@ -970,6 +1148,17 @@ export function GameCanvas() {
       sunLight.target.position.set(sim.px, 0, sim.pz);
       sunLight.target.updateMatrixWorld();
 
+      if (store.settings.graphicsQuality !== lastGraphicsQuality) {
+        lastGraphicsQuality = store.settings.graphicsQuality;
+        renderer.setPixelRatio(
+          isSoftwareGl
+            ? 1
+            : lastGraphicsQuality === 'medium'
+              ? 1.0
+              : Math.min(window.devicePixelRatio, 1.35)
+        );
+      }
+
       const dayFactor = THREE.MathUtils.clamp((sunElev + 0.15) / 0.55, 0, 1);
       const sunsetFactor = THREE.MathUtils.clamp(1 - Math.abs(sunElev - 0.08) * 4.5, 0, 1);
       const isNight = dayFactor < 0.35;
@@ -977,7 +1166,16 @@ export function GameCanvas() {
       const rainFactor = isRaining ? 1.0 : 0.0;
       const fogFactor = store.weather === 'fog' ? 1.0 : 0.0;
 
-      skyDome.update(camera.position, _sunDir, dayFactor, sunsetFactor, rainFactor, fogFactor, elapsed);
+      if (isRaining) {
+        sim.lightningTimer -= dt;
+        if (sim.lightningTimer <= 0) {
+          sim.lightningFlash = 1.0;
+          sim.lightningTimer = 7 + Math.random() * 11;
+        }
+      }
+      sim.lightningFlash = Math.max(0, sim.lightningFlash - dt * 5.2);
+
+      skyDome.update(camera.position, _sunDir, dayFactor, sunsetFactor, rainFactor, fogFactor, elapsed, sim.lightningFlash);
       skyDome.getHorizonColor(_horizonCol);
 
       if (scene.fog instanceof THREE.FogExp2) {
@@ -987,16 +1185,18 @@ export function GameCanvas() {
       }
 
       const targetRoadRough = isRaining ? 0.16 : 0.82;
-      const targetRoadEnv = isRaining ? 1.85 : 0.85;
+      const targetRoadEnv = isRaining ? 1.55 : 0.72;
       for (const am of city.asphaltMaterials) {
         am.roughness = THREE.MathUtils.damp(am.roughness, targetRoadRough, 1.5, dt);
         am.envMapIntensity = THREE.MathUtils.damp(am.envMapIntensity, targetRoadEnv, 1.5, dt);
       }
 
-      sunLight.intensity = Math.max(0.28, dayFactor * (isRaining ? 1.15 : 1.85));
+      sunLight.intensity = Math.max(0.24, dayFactor * (isRaining ? 0.85 : 1.22)) + sim.lightningFlash * 1.8;
       sunLight.color.copy(_sunColorNight).lerp(_sunColorDay, dayFactor).lerp(_sunColorSunset, sunsetFactor * 0.78);
-      hemiLight.intensity = 0.44 + dayFactor * 0.42;
+      hemiLight.intensity = 0.30 + dayFactor * 0.28 + sim.lightningFlash * 0.5;
       hemiLight.color.copy(_hemiSkyNight).lerp(_hemiSkyDay, dayFactor);
+      rimLight.color.copy(_rimNightCol).lerp(_rimDayCol, dayFactor).lerp(_rimSunsetCol, sunsetFactor * 0.7);
+      rimLight.intensity = 0.22 + sunsetFactor * 0.18 + sim.lightningFlash * 0.65;
 
       const nightEmissive = isNight ? 1.05 : 0.0;
       city.streetlampBulbMat.emissiveIntensity = isNight ? 1.5 : 0.15;
@@ -1012,17 +1212,40 @@ export function GameCanvas() {
       city.waterNormalMap.offset.y = (elapsed * 0.015) % 1;
       city.oceanMesh.position.y = -0.45 + Math.sin(elapsed * 1.4) * 0.07;
 
-      // Rain Particles
-      rainPoints.visible = isRaining;
-      if (rainPoints.visible) {
-        rainPoints.position.set(sim.px, 0, sim.pz);
+      // Slanted Rain Streaks & Ground Puddle Splashes
+      rainLines.visible = isRaining;
+      splashInst.visible = isRaining;
+      if (isRaining) {
+        rainLines.position.set(sim.px, 0, sim.pz);
         const posAttr = rainGeo.attributes.position as THREE.BufferAttribute;
         const arr = posAttr.array as Float32Array;
         for (let i = 0; i < rainCount; i++) {
-          arr[i * 3 + 1] -= dt * 38;
-          if (arr[i * 3 + 1] < 0) arr[i * 3 + 1] = 38;
+          let ry = rainSeeds[i * 3 + 1] - dt * 44;
+          if (ry < 0) ry += 36;
+          rainSeeds[i * 3 + 1] = ry;
+          const rx = rainSeeds[i * 3];
+          const rz = rainSeeds[i * 3 + 2];
+          arr[i * 6] = rx;
+          arr[i * 6 + 1] = ry;
+          arr[i * 6 + 2] = rz;
+          arr[i * 6 + 3] = rx + 0.18;
+          arr[i * 6 + 4] = ry + 1.15;
+          arr[i * 6 + 5] = rz + 0.08;
         }
         posAttr.needsUpdate = true;
+
+        for (let i = 0; i < SPLASH_COUNT; i++) {
+          const sp = splashOffsets[i];
+          const p = (sp.phase + elapsed * 1.65) % 1;
+          const sx = sim.px + sp.dx;
+          const sz = sim.pz + sp.dz;
+          const gy = getGroundHeightAt(sx, sz);
+          _splashDummy.position.set(sx, gy + 0.04, sz);
+          _splashDummy.scale.setScalar(0.35 + p * 1.65);
+          _splashDummy.updateMatrix();
+          splashInst.setMatrixAt(i, _splashDummy.matrix);
+        }
+        splashInst.instanceMatrix.needsUpdate = true;
       }
 
       // Update Sparks Pool
@@ -1076,6 +1299,30 @@ export function GameCanvas() {
         }
         (tracerGeo.attributes.position as THREE.BufferAttribute).needsUpdate = true;
       }
+
+      // Update Paragon Heat Vision & Shockwave Ring VFX
+      if (sim.heatVisionTimer > 0) {
+        sim.heatVisionTimer = Math.max(0, sim.heatVisionTimer - dt);
+        const alpha = sim.heatVisionTimer / 0.16;
+        heatBeamMat.opacity = alpha * 0.92;
+        heatImpactSprite.material.opacity = alpha * 0.95;
+        if (sim.heatVisionTimer <= 0) {
+          heatBeamLeft.visible = false;
+          heatBeamRight.visible = false;
+          heatImpactSprite.visible = false;
+        }
+      }
+      if (sim.shockwaveTimer > 0) {
+        sim.shockwaveTimer = Math.max(0, sim.shockwaveTimer - dt);
+        const progress = 1 - sim.shockwaveTimer / 0.45;
+        shockRingMesh.scale.setScalar(1 + progress * 11.5);
+        shockRingMat.opacity = (1 - progress) * 0.88;
+        if (sim.shockwaveTimer <= 0) {
+          shockRingMesh.visible = false;
+        }
+      }
+      sim.shockwaveCooldown = Math.max(0, sim.shockwaveCooldown - dt);
+      sim.speedBoostTimer = Math.max(0, sim.speedBoostTimer - dt);
 
       // Traffic Light Cycle
       const sigCycle = elapsed % 24;
@@ -1205,6 +1452,12 @@ export function GameCanvas() {
             sim.pz = safe.z;
             sim.py = getGroundHeightAt(safe.x, safe.z);
             sim.pvy = 0;
+            v.speed = 0;
+            if (v.rig.horseLegs) {
+              for (const leg of v.rig.horseLegs) leg.rotation.x = 0;
+              v.rig.chassisGroup.position.y = 0;
+              v.rig.chassisGroup.rotation.set(0, 0, 0);
+            }
             sim.activeVehicle = null;
             playerRig.group.visible = true;
             audioEngine.playDoorToggle();
@@ -1226,6 +1479,8 @@ export function GameCanvas() {
                 store.pushToast('Valkyrie Air-1 Controls', 'Space Climb · Ctrl Descend · W/S Pitch · A/D Yaw', 'info');
               } else if (spec.vehicleClass === 'boat') {
                 store.pushToast('Barracuda Speedboat', 'Cruise the Solaris Bay oceanfront · Press E to swim/disembark.', 'info');
+              } else if (spec.vehicleClass === 'horse') {
+                store.pushToast(`Mounted ${spec.name}`, 'Hold Shift to gallop · Space to halt · Press E to dismount.', 'info');
               } else if (spec.vehicleClass === 'sedan') {
                 store.pushToast(`Driving ${spec.name}`, 'Press T to start a Taxi Fare or E to exit.', 'info');
               } else if (!targetV.isPlayerOwned) {
@@ -1326,7 +1581,7 @@ export function GameCanvas() {
         audioEngine.playUiClick();
         store.pushToast(
           `${WEAPONS[store.activeWeaponId].name}`,
-          store.activeWeaponId === 'unarmed'
+          store.activeWeaponId === 'unarmed' || store.activeWeaponId === 'sword'
             ? 'Melee active.'
             : `Reserve Ammo: ${store.weaponAmmo[store.activeWeaponId] ?? 0} rds`,
           'info'
@@ -1344,9 +1599,31 @@ export function GameCanvas() {
       let inWaterNow = false;
       let isCrouchingNow = false;
 
+      const isParagonHero = store.activeCharacterId === 'paragon' || store.outfitId === 'paragon_suit';
+      const isBatmanHero = store.activeCharacterId === 'batman' || store.outfitId === 'dark_knight';
+      const isNomadHero = store.activeCharacterId === 'nomad' || store.outfitId === 'desert_commando';
+      const isSunburstHero = store.activeCharacterId === 'sunburst' || store.outfitId === 'sunburst_nika';
+      const isNarutoHero =
+        store.activeCharacterId === 'naruto' ||
+        store.outfitId === 'naruto_sage_cloak' ||
+        store.outfitId === 'naruto_tracksuit';
+      const isGokuHero = store.activeCharacterId === 'goku' || store.outfitId === 'goku_damaged_gi';
+      const isSuperHero = isParagonHero || isBatmanHero || isSunburstHero || isNarutoHero || isGokuHero;
+      if (isSuperHero && store.health > 0 && store.health < 100) {
+        sim.regenAccum += dt;
+        if (sim.regenAccum >= 0.8) {
+          sim.regenAccum = 0;
+          store.regenHealth(2);
+        }
+      } else {
+        sim.regenAccum = 0;
+      }
+
       if (sim.activeVehicle) {
         gameInput.flyTogglePressed = false;
+        gameInput.shockwavePressed = false;
         sim.isFlying = false;
+        sim.divingSlam = false;
         const v = sim.activeVehicle;
         const spec = VEHICLE_SPECS[v.specId];
         const vClass = spec.vehicleClass;
@@ -1354,7 +1631,7 @@ export function GameCanvas() {
         const steerInput = THREE.MathUtils.clamp(moveTurn, -1, 1);
 
         const isVex = store.activeCharacterId === 'vex';
-        const fuelDepleted = vClass !== 'bicycle' && v.fuel <= 0;
+        const fuelDepleted = vClass !== 'bicycle' && vClass !== 'horse' && v.fuel <= 0;
         const fuelScale = fuelDepleted ? 0.25 : 1.0;
 
         if (steerInput > 0.22) activeTurnSignal = -1;
@@ -1460,8 +1737,9 @@ export function GameCanvas() {
           speedKmh = Math.round(Math.abs(v.speed) * 3.6);
           gearLabel = v.speed < -0.5 ? 'R' : speedKmh < 3 ? 'N' : 'SEA';
         } else {
-          // WHEELED LAND VEHICLES (Cars, Muscle, SUV, Pickup, Moto, Bicycle, Truck, Bus, EMS, Police)
+          // WHEELED LAND VEHICLES & HORSE MOUNTS
           const handbrake = gameInput.jumpOrBrake;
+          const isHorse = vClass === 'horse';
           const useNitro =
             vClass !== 'bicycle' && (gameInput.nitro || gameInput.sprint) && v.nitro > 1 && throttle > 0.2;
           const healthFactor = v.health < 25 ? 0.65 : 1.0;
@@ -1480,24 +1758,24 @@ export function GameCanvas() {
             if (v.speed > 1.5) v.speed -= spec.braking * dt;
             else v.speed += throttle * spec.acceleration * 0.55 * dt;
           } else {
-            v.speed = THREE.MathUtils.damp(v.speed, 0, 1.8, dt);
+            v.speed = THREE.MathUtils.damp(v.speed, 0, isHorse ? 4.2 : 1.8, dt);
           }
 
           if (handbrake) {
-            v.speed = THREE.MathUtils.damp(v.speed, 0, 4.2, dt);
-            if (Math.abs(v.speed) > 7.5 && Math.abs(steerInput) > 0.2) {
+            v.speed = THREE.MathUtils.damp(v.speed, 0, isHorse ? 7.5 : 4.2, dt);
+            if (!isHorse && Math.abs(v.speed) > 7.5 && Math.abs(steerInput) > 0.2) {
               isDrifting = true;
             }
           }
 
-          v.speed = THREE.MathUtils.clamp(v.speed, -spec.maxSpeed * 0.38, effectiveMax);
+          v.speed = THREE.MathUtils.clamp(v.speed, -spec.maxSpeed * (isHorse ? 0.25 : 0.38), effectiveMax);
 
-          const speedSteerScale = Math.min(1, Math.abs(v.speed) / (vClass === 'bicycle' ? 2.5 : 6.5));
+          const speedSteerScale = Math.min(1, Math.abs(v.speed) / (vClass === 'bicycle' || isHorse ? 2.2 : 6.5));
           const turnSign = v.speed >= -0.2 ? 1 : -1;
           const targetSteer = steerInput * 0.58;
           v.steerAngle = THREE.MathUtils.damp(v.steerAngle, targetSteer, 10, dt);
           const driftMult = isDrifting ? 1.35 : 1.0;
-          v.rotationY += steerInput * spec.handling * speedSteerScale * driftMult * turnSign * dt;
+          v.rotationY += steerInput * spec.handling * (isHorse ? Math.max(0.35, speedSteerScale) : speedSteerScale) * driftMult * turnSign * dt;
 
           const vx = Math.sin(v.rotationY) * v.speed;
           const vz = Math.cos(v.rotationY) * v.speed;
@@ -1520,11 +1798,11 @@ export function GameCanvas() {
           v.z = col.z;
           v.y = getGroundHeightAt(v.x, v.z);
 
-          if (vClass !== 'bicycle' && Math.abs(v.speed) > 1.2 && v.fuel > 0) {
+          if (vClass !== 'bicycle' && !isHorse && Math.abs(v.speed) > 1.2 && v.fuel > 0) {
             v.fuel = Math.max(0, v.fuel - dt * (0.28 + Math.abs(v.speed) / spec.maxSpeed * 0.45));
           }
 
-          if (isDrifting && vClass !== 'bicycle') {
+          if (isDrifting && vClass !== 'bicycle' && !isHorse) {
             sim.skidAccum += Math.abs(v.speed) * dt;
             if (sim.skidAccum > 0.7) {
               sim.skidAccum = 0;
@@ -1534,36 +1812,73 @@ export function GameCanvas() {
 
           v.rig.group.position.set(v.x, v.y, v.z);
           v.rig.group.rotation.y = v.rotationY;
-          const isTwoWheeler = vClass === 'motorcycle' || vClass === 'bicycle';
+          const isTwoWheeler = vClass === 'motorcycle' || vClass === 'bicycle' || isHorse;
           const targetRoll = isTwoWheeler
-            ? steerInput * Math.min(1, Math.abs(v.speed) / 14) * 0.24
+            ? steerInput * Math.min(1, Math.abs(v.speed) / 14) * (isHorse ? 0.14 : 0.24)
             : -steerInput * Math.min(1, Math.abs(v.speed) / 28) * 0.068;
           const targetPitch =
             (throttle < 0 || handbrake ? 0.042 : throttle > 0 ? -0.026 : 0) * Math.min(1, Math.abs(v.speed) / 14);
           v.rig.chassisGroup.rotation.z = THREE.MathUtils.damp(v.rig.chassisGroup.rotation.z, targetRoll, 9, dt);
           v.rig.chassisGroup.rotation.x = THREE.MathUtils.damp(v.rig.chassisGroup.rotation.x, targetPitch, 9, dt);
 
-          const brakingNow = throttle < -0.05 || handbrake;
-          v.rig.taillightMat.emissiveIntensity = brakingNow ? 2.1 : headlightsActive ? 0.85 : 0.25;
-          v.rig.headlightMat.emissiveIntensity = headlightsActive ? 1.9 : 0.35;
-          for (const hs of v.rig.headlightSprites) hs.material.opacity = headlightsActive ? 0.68 : 0.1;
-          for (const ts of v.rig.taillightSprites) ts.material.opacity = brakingNow ? 0.72 : headlightsActive ? 0.35 : 0.08;
-          if (v.rig.headlightSpot) v.rig.headlightSpot.intensity = headlightsActive ? 5.2 : 0;
+          if (isHorse && v.rig.horseLegs) {
+            const absSpd = Math.abs(v.speed);
+            const speedRatio = Math.min(1.2, absSpd / spec.maxSpeed);
+            if (absSpd > 0.4) {
+              const stride = elapsed * (4.5 + speedRatio * 10.5);
+              const swingAmp = 0.28 + speedRatio * 0.56;
+              v.rig.horseLegs[0].rotation.x = Math.sin(stride) * swingAmp;
+              v.rig.horseLegs[1].rotation.x = Math.sin(stride + 1.05) * swingAmp;
+              v.rig.horseLegs[2].rotation.x = -Math.sin(stride + 0.55) * swingAmp;
+              v.rig.horseLegs[3].rotation.x = -Math.sin(stride + 1.55) * swingAmp;
+              v.rig.chassisGroup.position.y = Math.abs(Math.sin(stride)) * 0.095 * speedRatio;
+              if (v.rig.horseNeckPivot) {
+                v.rig.horseNeckPivot.rotation.x = Math.sin(stride) * 0.11 * speedRatio;
+              }
+              if (v.rig.horseTailPivot) {
+                v.rig.horseTailPivot.rotation.x = 0.24 + speedRatio * 0.35 + Math.sin(stride * 2) * 0.12;
+                v.rig.horseTailPivot.rotation.z = Math.cos(stride) * 0.14;
+              }
+            } else {
+              for (const leg of v.rig.horseLegs) leg.rotation.x = THREE.MathUtils.damp(leg.rotation.x, 0, 10, dt);
+              v.rig.chassisGroup.position.y = THREE.MathUtils.damp(v.rig.chassisGroup.position.y, 0, 10, dt);
+              if (v.rig.horseNeckPivot) {
+                v.rig.horseNeckPivot.rotation.x = Math.sin(elapsed * 1.4) * 0.04;
+              }
+              if (v.rig.horseTailPivot) {
+                v.rig.horseTailPivot.rotation.x = 0.06;
+                v.rig.horseTailPivot.rotation.z = Math.sin(elapsed * 2.2) * 0.09;
+              }
+            }
+          }
 
-          // Blinking Amber Turn Signals & Working Steering Wheel
-          const blink = Math.floor(elapsed * 6) % 2 === 0;
-          v.rig.leftSignalMat.emissiveIntensity = activeTurnSignal === -1 && blink ? 2.4 : 0.05;
-          v.rig.rightSignalMat.emissiveIntensity = activeTurnSignal === 1 && blink ? 2.4 : 0.05;
-          if (v.rig.steeringWheel) {
-            v.rig.steeringWheel.rotation.z = -v.steerAngle * 2.2;
+          if (!isHorse) {
+            const brakingNow = throttle < -0.05 || handbrake;
+            v.rig.taillightMat.emissiveIntensity = brakingNow ? 2.1 : headlightsActive ? 0.85 : 0.25;
+            v.rig.headlightMat.emissiveIntensity = headlightsActive ? 1.9 : 0.35;
+            for (const hs of v.rig.headlightSprites) hs.material.opacity = headlightsActive ? 0.68 : 0.1;
+            for (const ts of v.rig.taillightSprites) ts.material.opacity = brakingNow ? 0.72 : headlightsActive ? 0.35 : 0.08;
+            if (v.rig.headlightSpot) v.rig.headlightSpot.intensity = headlightsActive ? 5.2 : 0;
+
+            // Blinking Amber Turn Signals & Working Steering Wheel
+            const blink = Math.floor(elapsed * 6) % 2 === 0;
+            v.rig.leftSignalMat.emissiveIntensity = activeTurnSignal === -1 && blink ? 2.4 : 0.05;
+            v.rig.rightSignalMat.emissiveIntensity = activeTurnSignal === 1 && blink ? 2.4 : 0.05;
+            if (v.rig.steeringWheel) {
+              v.rig.steeringWheel.rotation.z = -v.steerAngle * 2.2;
+            }
           }
 
           for (const fw of v.rig.frontWheelSteers) fw.rotation.y = v.steerAngle;
           for (const w of v.rig.wheels) w.rotation.x += v.speed * dt * 2.4;
 
           speedKmh = Math.round(Math.abs(v.speed) * 3.6);
-          const gearIdx = v.speed < -0.5 ? 0 : speedKmh < 3 ? 0 : Math.min(6, Math.ceil(speedKmh / 28));
-          gearLabel = v.speed < -0.5 ? 'R' : speedKmh < 3 ? 'N' : String(gearIdx);
+          if (isHorse) {
+            gearLabel = speedKmh < 3 ? 'IDL' : speedKmh < 24 ? 'WLK' : speedKmh < 54 ? 'TRT' : 'GLP';
+          } else {
+            const gearIdx = v.speed < -0.5 ? 0 : speedKmh < 3 ? 0 : Math.min(6, Math.ceil(speedKmh / 28));
+            gearLabel = v.speed < -0.5 ? 'R' : speedKmh < 3 ? 'N' : String(gearIdx);
+          }
         }
 
         // Check Taxi Fare Completion
@@ -1598,8 +1913,15 @@ export function GameCanvas() {
           const fwdZ = Math.cos(v.rotationY);
           const rightX = Math.cos(v.rotationY);
           const rightZ = -Math.sin(v.rotationY);
-          const seatY = vClass === 'helicopter' ? v.y + 1.45 : vClass === 'motorcycle' || vClass === 'bicycle' ? v.y + 1.45 : v.y + spec.height * 0.76;
-          const seatSide = vClass === 'motorcycle' || vClass === 'bicycle' || vClass === 'boat' ? 0 : -spec.width * 0.18;
+          const seatY =
+            vClass === 'horse'
+              ? v.y + 1.92
+              : vClass === 'helicopter'
+                ? v.y + 1.45
+                : vClass === 'motorcycle' || vClass === 'bicycle'
+                  ? v.y + 1.45
+                  : v.y + spec.height * 0.76;
+          const seatSide = vClass === 'motorcycle' || vClass === 'bicycle' || vClass === 'boat' || vClass === 'horse' ? 0 : -spec.width * 0.18;
           _camDesired.set(
             v.x + fwdX * (spec.length * 0.14) + rightX * seatSide,
             seatY,
@@ -1643,9 +1965,90 @@ export function GameCanvas() {
         );
       } else {
         // ON-FOOT THIRD-PERSON / FIRST-PERSON CHARACTER + FLIGHT + SWIMMING + CROUCH STEALTH
+        const triggerShockwaveSlam = () => {
+          sim.shockwaveTimer = 0.45;
+          sim.shockwaveCooldown = 1.4;
+          const groundYSlam = getGroundHeightAt(sim.px, sim.pz, sim.py);
+          shockRingMat.color.set(
+            isSunburstHero
+              ? '#e0f2fe'
+              : isGokuHero || isNarutoHero
+                ? '#38bdf8'
+                : isBatmanHero
+                  ? '#c49d62'
+                  : '#facc15'
+          );
+          shockRingMesh.position.set(sim.px, groundYSlam + 0.16, sim.pz);
+          shockRingMesh.scale.setScalar(1);
+          shockRingMesh.visible = true;
+          shockRingMat.opacity = 0.88;
+          audioEngine.playShockwave();
+          sim.camShake = Math.max(sim.camShake, 0.55);
+          spawnImpactSparks(sim.px, groundYSlam + 0.3, sim.pz, 22);
+
+          let triggeredHeat = false;
+          for (const off of policeOfficers) {
+            if (!off.active) continue;
+            const dx = off.x - sim.px;
+            const dz = off.z - sim.pz;
+            const dist = Math.hypot(dx, dz) || 0.1;
+            if (dist < 12.5) {
+              off.stunTimer = 5.5;
+              off.x += (dx / dist) * 5.2;
+              off.z += (dz / dist) * 5.2;
+              triggeredHeat = true;
+            }
+          }
+          for (const cop of policeAgents) {
+            if (!cop.active) continue;
+            const dx = cop.x - sim.px;
+            const dz = cop.z - sim.pz;
+            const dist = Math.hypot(dx, dz) || 0.1;
+            if (dist < 12.5) {
+              cop.x += (dx / dist) * 4.2;
+              cop.z += (dz / dist) * 4.2;
+              cop.speed = -12;
+              spawnImpactSparks(cop.x, groundYSlam + 0.5, cop.z, 10);
+              triggeredHeat = true;
+            }
+          }
+          for (const tr of trafficAgents) {
+            const dist = Math.hypot(tr.x - sim.px, tr.z - sim.pz);
+            if (dist < 12.5) {
+              tr.speed = 0;
+              spawnImpactSparks(tr.x, groundYSlam + 0.5, tr.z, 8);
+              triggeredHeat = true;
+            }
+          }
+          for (const wv of worldVehicles) {
+            if (wv.isPlayerOwned) continue;
+            const dist = Math.hypot(wv.x - sim.px, wv.z - sim.pz);
+            if (dist < 12.5) {
+              wv.health = Math.max(10, wv.health - 28);
+              spawnImpactSparks(wv.x, wv.y + 0.5, wv.z, 8);
+              triggeredHeat = true;
+            }
+          }
+          for (const ped of pedestrians) {
+            const dx = ped.x - sim.px;
+            const dz = ped.z - sim.pz;
+            const dist = Math.hypot(dx, dz) || 0.1;
+            if (dist < 12.5) {
+              ped.rotY = Math.atan2(dx, dz);
+              ped.x += (dx / dist) * 4.2;
+              ped.z += (dz / dist) * 4.2;
+              triggeredHeat = true;
+            }
+          }
+          if (triggeredHeat) {
+            store.triggerCrimeHeat(2);
+          }
+        };
+
         if (gameInput.flyTogglePressed) {
           gameInput.flyTogglePressed = false;
           sim.isFlying = !sim.isFlying;
+          sim.divingSlam = false;
           gameInput.crouch = false;
           if (sim.isFlying) {
             sim.pvy = 6.0;
@@ -1661,20 +2064,34 @@ export function GameCanvas() {
           }
         }
 
-        const groundYNow = getGroundHeightAt(sim.px, sim.pz);
+        const groundYNow = getGroundHeightAt(sim.px, sim.pz, sim.py);
+        if (gameInput.shockwavePressed) {
+          gameInput.shockwavePressed = false;
+          if (isSuperHero && sim.shockwaveCooldown <= 0) {
+            if (sim.isFlying && sim.py > groundYNow + 3.5) {
+              sim.divingSlam = true;
+              sim.pvy = -34;
+              audioEngine.playJump();
+            } else {
+              triggerShockwaveSlam();
+            }
+          }
+        }
+
         isCrouchingNow = !sim.isFlying && gameInput.crouch;
         inWaterNow =
           !sim.isFlying &&
           sim.pz > 214 &&
           Math.abs(sim.px) > 6.5 &&
-          Math.abs(sim.px - 118) > 5.5;
+          Math.abs(sim.px - 118) > 5.5 &&
+          sim.py < 2.2;
 
         const inputMag = Math.min(1, Math.hypot(moveFwd, moveTurn));
         const isSprinting = gameInput.sprint && !isCrouchingNow && inputMag > 0.1 && (sim.isFlying || sim.stamina > 2);
         if (isSprinting && !sim.isFlying) sim.stamina = Math.max(0, sim.stamina - dt * 20);
         else sim.stamina = Math.min(100, sim.stamina + dt * 15);
 
-        const walkSpeed = sim.isFlying
+        const baseWalkSpeed = sim.isFlying
           ? isSprinting
             ? 48
             : 28
@@ -1685,6 +2102,18 @@ export function GameCanvas() {
               : isSprinting
                 ? 10.2
                 : 5.4;
+        const heroSpeedMult = isGokuHero
+          ? 1.25
+          : isNarutoHero
+            ? 1.22
+            : isSunburstHero
+              ? 1.18
+              : isBatmanHero
+                ? 1.12
+                : isNomadHero
+                  ? 1.08
+                  : 1.0;
+        const walkSpeed = baseWalkSpeed * heroSpeedMult * (sim.speedBoostTimer > 0 ? 1.32 : 1.0);
 
         if (inputMag > 0.05) {
           const camForwardX = -Math.sin(sim.camYaw);
@@ -1709,6 +2138,7 @@ export function GameCanvas() {
           const col = resolveCircleWorldCollision(nextX, nextZ, 0.48, {
             allowWater: true,
             isAircraft: sim.isFlying && sim.py > groundYNow + 10,
+            currentY: sim.py,
           });
           sim.px = col.x;
           sim.pz = col.z;
@@ -1719,12 +2149,19 @@ export function GameCanvas() {
 
         if (sim.isFlying) {
           const climb = (gameInput.jumpOrBrake ? 1 : 0) - (gameInput.descend ? 1 : 0);
-          const targetVy = climb > 0 ? 16 : climb < 0 ? -15 : 0;
-          sim.pvy = THREE.MathUtils.damp(sim.pvy, targetVy, 6.5, dt);
-          const groundY = getGroundHeightAt(sim.px, sim.pz);
+          const targetVy = sim.divingSlam ? -44 : climb > 0 ? 16 : climb < 0 ? -15 : 0;
+          sim.pvy = THREE.MathUtils.damp(sim.pvy, targetVy, sim.divingSlam ? 12 : 6.5, dt);
+          const groundY = getGroundHeightAt(sim.px, sim.pz, sim.py);
           sim.py = THREE.MathUtils.clamp(sim.py + sim.pvy * dt, groundY, 110);
           sim.onGround = false;
-          if (climb < 0 && sim.py <= groundY + 0.04) {
+          if (sim.divingSlam && sim.py <= groundY + 0.15) {
+            sim.py = groundY;
+            sim.pvy = 0;
+            sim.isFlying = false;
+            sim.divingSlam = false;
+            sim.onGround = true;
+            triggerShockwaveSlam();
+          } else if (climb < 0 && sim.py <= groundY + 0.04) {
             sim.py = groundY;
             sim.pvy = 0;
             sim.isFlying = false;
@@ -1745,55 +2182,93 @@ export function GameCanvas() {
           }
           sim.pvy -= 20 * dt;
           sim.py += sim.pvy * dt;
-          const groundY = getGroundHeightAt(sim.px, sim.pz);
+          const groundY = getGroundHeightAt(sim.px, sim.pz, sim.py);
           if (sim.py <= groundY) {
             sim.py = groundY;
             sim.pvy = 0;
             sim.onGround = true;
+          } else if (sim.onGround && sim.py > groundY + 0.15) {
+            sim.onGround = false;
           }
         }
 
-        // MULTI-WEAPON COMBAT (Unarmed Melee, Pistol, Carbine Rifle, Breacher Shotgun)
+        // MULTI-WEAPON & HERO POWER COMBAT (Heat Vision / Kamehameha-Rasengan Energy Blast / Sonic Punch / Melee, Pistol, SMG, Carbine Rifle, Shotgun, RPG-7)
         const weaponId = store.activeWeaponId;
         const wSpec = WEAPONS[weaponId];
+        const useHeatVision = isParagonHero && weaponId === 'unarmed';
+        const useEnergyBlast = (isGokuHero || isNarutoHero) && weaponId === 'unarmed';
+        const useBeamPower = useHeatVision || useEnergyBlast;
+        const useSonicPunch = isSunburstHero && weaponId === 'unarmed';
         sim.fireCooldown = Math.max(0, sim.fireCooldown - dt);
         sim.aimHoldTimer = Math.max(0, sim.aimHoldTimer - dt);
         sim.muzzleTimer = Math.max(0, sim.muzzleTimer - dt);
 
-        const wantsAutoFire = weaponId === 'rifle' && gameInput.fireHeld;
+        const wantsAutoFire = (weaponId === 'rifle' || weaponId === 'smg' || useBeamPower || useSonicPunch) && gameInput.fireHeld;
         if ((gameInput.firePressed || wantsAutoFire) && !inWaterNow) {
           gameInput.firePressed = false;
           if (sim.fireCooldown <= 0) {
             if (!store.consumeAmmo(weaponId)) {
-              store.pushToast('Out of Ammo', `Visit Solaris Tactical or press 1 for Melee.`, 'warning');
+              store.pushToast('Out of Ammo', `Visit Solaris Tactical or press 1 for Melee / Hero Power.`, 'warning');
               sim.fireCooldown = 0.35;
             } else {
-              sim.fireCooldown = wSpec.cooldown;
-              sim.aimHoldTimer = 0.78;
-              sim.muzzleTimer = weaponId === 'unarmed' ? 0 : 0.075;
+              sim.fireCooldown = useBeamPower ? 0.17 : useSonicPunch ? 0.2 : wSpec.cooldown;
+              sim.aimHoldTimer = useBeamPower || useSonicPunch ? 0.28 : weaponId === 'sword' ? 0.42 : 0.78;
+              sim.muzzleTimer = weaponId === 'unarmed' || weaponId === 'sword' ? 0 : 0.075;
               sim.protY = sim.camYaw + Math.PI;
-              sim.camShake = Math.max(sim.camShake, weaponId === 'shotgun' ? 0.24 : weaponId === 'unarmed' ? 0.08 : 0.14);
-              audioEngine.playGunshot(weaponId);
+              sim.camShake = Math.max(
+                sim.camShake,
+                weaponId === 'rpg'
+                  ? 0.65
+                  : useSonicPunch
+                    ? 0.22
+                    : useBeamPower
+                      ? 0.14
+                      : weaponId === 'shotgun'
+                        ? 0.24
+                        : weaponId === 'sword'
+                          ? 0.12
+                          : weaponId === 'unarmed'
+                            ? 0.08
+                            : 0.14
+              );
+              if (useBeamPower) {
+                audioEngine.playHeatVision();
+              } else if (useSonicPunch) {
+                audioEngine.playMelee();
+              } else {
+                audioEngine.playGunshot(weaponId);
+              }
 
               const baseLookX = -Math.sin(sim.camYaw);
               const baseLookZ = -Math.cos(sim.camYaw);
               const muzzleY = sim.py + (isCrouchingNow ? 1.05 : 1.44);
               const muzzleX = sim.px + baseLookX * 0.65;
               const muzzleZ = sim.pz + baseLookZ * 0.65;
+              const effRange = useBeamPower ? 75 : useSonicPunch ? 13.5 : wSpec.range;
+              const effSpread = useBeamPower || useSonicPunch ? 0 : wSpec.spread;
+              const effDamage = useBeamPower ? 46 : useSonicPunch ? 48 : wSpec.damage;
               let triggeredHeat = false;
+              let heatBestT = effRange;
+              let lastImpactX = sim.px + baseLookX * effRange;
+              let lastImpactZ = sim.pz + baseLookZ * effRange;
+
+              if (useSonicPunch) {
+                spawnImpactSparks(muzzleX + baseLookX * 1.4, muzzleY - 0.1, muzzleZ + baseLookZ * 1.4, 8);
+              }
 
               for (let pellet = 0; pellet < wSpec.pellets; pellet++) {
-                const spreadAngle = (Math.random() - 0.5) * wSpec.spread * 2;
+                const spreadAngle = (Math.random() - 0.5) * effSpread * 2;
                 const cosA = Math.cos(spreadAngle);
                 const sinA = Math.sin(spreadAngle);
                 const lookX = baseLookX * cosA - baseLookZ * sinA;
                 const lookZ = baseLookX * sinA + baseLookZ * cosA;
 
-                let bestT = wSpec.range;
+                let bestT = effRange;
                 let hitType: 'police' | 'officer' | 'vehicle' | 'ped' | null = null;
                 let hitVehicle: WorldVehicle | null = null;
                 let hitPed: PedestrianAgent | null = null;
                 let hitOfficer: PoliceOfficerAgent | null = null;
+                let hitPoliceCop: PoliceAgent | null = null;
 
                 for (const cop of policeAgents) {
                   if (!cop.active) continue;
@@ -1805,6 +2280,7 @@ export function GameCanvas() {
                     if (perp < 1.85) {
                       bestT = proj;
                       hitType = 'police';
+                      hitPoliceCop = cop;
                     }
                   }
                 }
@@ -1862,42 +2338,159 @@ export function GameCanvas() {
                   }
                 }
 
+                heatBestT = bestT;
                 const hx = sim.px + lookX * bestT;
                 const hz = sim.pz + lookZ * bestT;
-                if (weaponId !== 'unarmed') {
+                lastImpactX = hx;
+                lastImpactZ = hz;
+                if (weaponId !== 'unarmed' && weaponId !== 'sword') {
                   addTracer(muzzleX, muzzleY, muzzleZ, hx, muzzleY - 0.05, hz);
                 }
 
                 if (hitType === 'police') {
                   spawnImpactSparks(hx, getGroundHeightAt(hx, hz) + 0.55, hz, 12);
                   audioEngine.playImpact(0.55);
+                  if ((useBeamPower || useSonicPunch) && hitPoliceCop) {
+                    hitPoliceCop.speed = useSonicPunch ? -11 : -9;
+                  }
                   store.triggerCrimeHeat(2);
                   triggeredHeat = true;
                 } else if (hitType === 'officer' && hitOfficer) {
                   spawnImpactSparks(hx, getGroundHeightAt(hx, hz) + 0.85, hz, 10);
-                  hitOfficer.stunTimer = 4.5;
-                  hitOfficer.x += lookX * 1.4;
-                  hitOfficer.z += lookZ * 1.4;
+                  hitOfficer.stunTimer = useSonicPunch ? 5.2 : 4.5;
+                  hitOfficer.x += lookX * (useSonicPunch ? 3.8 : useBeamPower ? 2.6 : 1.4);
+                  hitOfficer.z += lookZ * (useSonicPunch ? 3.8 : useBeamPower ? 2.6 : 1.4);
                   store.triggerCrimeHeat(3);
                   triggeredHeat = true;
                 } else if (hitType === 'vehicle') {
                   spawnImpactSparks(hx, getGroundHeightAt(hx, hz) + 0.55, hz, 10);
                   audioEngine.playImpact(0.45);
-                  if (hitVehicle) hitVehicle.health = Math.max(10, hitVehicle.health - wSpec.damage * 0.35);
+                  if (hitVehicle) hitVehicle.health = Math.max(10, hitVehicle.health - effDamage * 0.35);
                   store.triggerCrimeHeat(1);
                   triggeredHeat = true;
-                } else if (hitType === 'ped' && hitPed) {
+                } else if (hitType === 'ped' && hitPed && hitPed.active) {
                   spawnImpactSparks(hitPed.x, getGroundHeightAt(hitPed.x, hitPed.z) + 0.7, hitPed.z, 8);
                   hitPed.rotY = Math.atan2(hitPed.x - sim.px, hitPed.z - sim.pz);
-                  hitPed.x += lookX * 1.6;
-                  hitPed.z += lookZ * 1.6;
-                  store.triggerCrimeHeat(weaponId === 'unarmed' ? 1 : 2);
+                  hitPed.x += lookX * (useSonicPunch ? 3.8 : useBeamPower ? 2.6 : 1.6);
+                  hitPed.z += lookZ * (useSonicPunch ? 3.8 : useBeamPower ? 2.6 : 1.6);
+                  const dmg = weaponId === 'rpg' ? 160 : weaponId === 'shotgun' ? 75 : weaponId === 'rifle' ? 60 : weaponId === 'sword' ? 70 : weaponId === 'pistol' ? 45 : 35;
+                  hitPed.hp -= useBeamPower || useSonicPunch ? 120 : dmg;
+                  if (hitPed.hp <= 0 && hitPed.active) {
+                    hitPed.active = false;
+                    hitPed.rig.group.position.y = -100;
+                    const cash = Math.floor(120 + Math.random() * 280);
+                    store.addMoney(cash);
+                    store.pushToast('Pedestrian Eliminated', `Looted +$${cash} cash from civilian.`, 'success');
+                    audioEngine.playCheckpoint();
+                  }
+                  store.triggerCrimeHeat(2);
                   triggeredHeat = true;
                 }
               }
 
+              // Explosive AOE Blast for Solaris RPG-7 Launcher
+              if (weaponId === 'rpg') {
+                const blastY = getGroundHeightAt(lastImpactX, lastImpactZ);
+                audioEngine.playExplosion();
+                shockRingMat.color.set('#fb923c');
+                shockRingMesh.position.set(lastImpactX, blastY + 0.2, lastImpactZ);
+                shockRingMesh.scale.setScalar(1);
+                shockRingMesh.visible = true;
+                shockRingMat.opacity = 0.92;
+                sim.shockwaveTimer = 0.45;
+                spawnImpactSparks(lastImpactX, blastY + 0.5, lastImpactZ, 30);
+
+                for (const off of policeOfficers) {
+                  if (!off.active) continue;
+                  const dx = off.x - lastImpactX;
+                  const dz = off.z - lastImpactZ;
+                  const dist = Math.hypot(dx, dz) || 0.1;
+                  if (dist < 13.5) {
+                    off.stunTimer = 6;
+                    off.x += (dx / dist) * 5.5;
+                    off.z += (dz / dist) * 5.5;
+                    triggeredHeat = true;
+                  }
+                }
+                for (const cop of policeAgents) {
+                  if (!cop.active) continue;
+                  const dx = cop.x - lastImpactX;
+                  const dz = cop.z - lastImpactZ;
+                  const dist = Math.hypot(dx, dz) || 0.1;
+                  if (dist < 13.5) {
+                    cop.x += (dx / dist) * 4.5;
+                    cop.z += (dz / dist) * 4.5;
+                    cop.speed = -13;
+                    triggeredHeat = true;
+                  }
+                }
+                for (const tr of trafficAgents) {
+                  if (Math.hypot(tr.x - lastImpactX, tr.z - lastImpactZ) < 13.5) {
+                    tr.speed = 0;
+                    triggeredHeat = true;
+                  }
+                }
+                for (const wv of worldVehicles) {
+                  if (wv.isPlayerOwned) continue;
+                  if (Math.hypot(wv.x - lastImpactX, wv.z - lastImpactZ) < 13.5) {
+                    wv.health = Math.max(10, wv.health - 55);
+                    triggeredHeat = true;
+                  }
+                }
+                for (const ped of pedestrians) {
+                  const dx = ped.x - lastImpactX;
+                  const dz = ped.z - lastImpactZ;
+                  const dist = Math.hypot(dx, dz) || 0.1;
+                  if (dist < 13.5) {
+                    ped.rotY = Math.atan2(dx, dz);
+                    ped.x += (dx / dist) * 4.5;
+                    ped.z += (dz / dist) * 4.5;
+                    triggeredHeat = true;
+                  }
+                }
+                store.triggerCrimeHeat(3);
+              }
+
+              // Render Twin Crimson Eye Beams (Paragon) or Cyan Energy Beams (Goku Kamehameha / Naruto Rasengan Blast)
+              if (useBeamPower) {
+                sim.heatVisionTimer = 0.16;
+                heatBeamMat.color.set(useEnergyBlast ? '#38bdf8' : '#ff2d20');
+                heatImpactSprite.material.color.set(useEnergyBlast ? '#7dd3fc' : '#ff4d2e');
+                const eyeY = sim.py + (isCrouchingNow ? 1.24 : useEnergyBlast ? 1.28 : 1.7);
+                const rightX = Math.cos(sim.protY);
+                const rightZ = -Math.sin(sim.protY);
+                const fwdOffsetX = baseLookX * (useEnergyBlast ? 0.45 : 0.14);
+                const fwdOffsetZ = baseLookZ * (useEnergyBlast ? 0.45 : 0.14);
+                const tx = sim.px + baseLookX * heatBestT;
+                const ty = Math.max(getGroundHeightAt(tx, sim.pz + baseLookZ * heatBestT) + 0.2, eyeY - Math.sin(sim.camPitch - 0.14) * heatBestT * 0.45);
+                const tz = sim.pz + baseLookZ * heatBestT;
+                _hvTargetPos.set(tx, ty, tz);
+
+                const positionBeam = (beamMesh: THREE.Mesh, side: -1 | 1) => {
+                  _hvEyePos.set(
+                    sim.px + fwdOffsetX + rightX * side * (useEnergyBlast ? 0.03 : 0.055),
+                    eyeY,
+                    sim.pz + fwdOffsetZ + rightZ * side * (useEnergyBlast ? 0.03 : 0.055)
+                  );
+                  _hvDir.subVectors(_hvTargetPos, _hvEyePos);
+                  const dist = Math.max(0.5, _hvDir.length());
+                  _hvDir.divideScalar(dist);
+                  _hvMid.addVectors(_hvEyePos, _hvTargetPos).multiplyScalar(0.5);
+                  beamMesh.position.copy(_hvMid);
+                  beamMesh.quaternion.setFromUnitVectors(_hvUp, _hvDir);
+                  beamMesh.scale.set(useEnergyBlast ? 2.4 : 1, dist, useEnergyBlast ? 2.4 : 1);
+                  beamMesh.visible = true;
+                };
+                positionBeam(heatBeamLeft, -1);
+                positionBeam(heatBeamRight, 1);
+                heatBeamMat.opacity = 0.92;
+                heatImpactSprite.position.copy(_hvTargetPos);
+                heatImpactSprite.material.opacity = 0.95;
+                heatImpactSprite.visible = true;
+              }
+
               // Non-silent firearm alerts nearby pedestrians within radius (halved when crouching)
-              if (!triggeredHeat && weaponId !== 'unarmed') {
+              if (!triggeredHeat && ((weaponId !== 'unarmed' && weaponId !== 'sword') || useBeamPower || useSonicPunch)) {
                 const alertRadius = isCrouchingNow ? 11 : 22;
                 for (const ped of pedestrians) {
                   if (Math.hypot(ped.x - sim.px, ped.z - sim.pz) < alertRadius) {
@@ -1915,10 +2508,64 @@ export function GameCanvas() {
 
         // Character Pose & First-Person Head / Mask / Gear Visibility
         const isFirstPersonFoot = store.cameraMode === 'first_person';
-        const isSpecialOutfit = ['tactical_operator', 'street_hoodie', 'academy_sailor', 'arachnid_suit'].includes(
-          store.outfitId
-        );
-        playerRig.head.visible = !isFirstPersonFoot;
+        const isParagonSuit = store.outfitId === 'paragon_suit';
+        const isDarkKnightSuit = store.outfitId === 'dark_knight';
+        const isDesertSuit = store.outfitId === 'desert_commando';
+        const isSunburstSuit = store.outfitId === 'sunburst_nika';
+        const isNarutoSage = store.outfitId === 'naruto_sage_cloak';
+        const isNarutoTrack = store.outfitId === 'naruto_tracksuit';
+        const isNarutoSuit = isNarutoSage || isNarutoTrack;
+        const isGokuSuit = store.outfitId === 'goku_damaged_gi';
+        const isSpecialOutfit = [
+          'tactical_operator',
+          'street_hoodie',
+          'academy_sailor',
+          'arachnid_suit',
+          'paragon_suit',
+          'dark_knight',
+          'desert_commando',
+          'sunburst_nika',
+          'naruto_sage_cloak',
+          'naruto_tracksuit',
+          'goku_damaged_gi',
+        ].includes(store.outfitId);
+        playerRig.head.visible =
+          !isFirstPersonFoot &&
+          !isParagonSuit &&
+          !isDarkKnightSuit &&
+          !isDesertSuit &&
+          !isSunburstSuit &&
+          !isNarutoSuit &&
+          !isGokuSuit &&
+          store.outfitId !== 'arachnid_suit';
+        playerRig.baseFaceGroup.visible =
+          !isFirstPersonFoot &&
+          !isParagonSuit &&
+          !isDarkKnightSuit &&
+          !isDesertSuit &&
+          !isSunburstSuit &&
+          !isNarutoSuit &&
+          !isGokuSuit &&
+          store.outfitId !== 'arachnid_suit';
+        playerRig.paragonHeadGroup.visible = !isFirstPersonFoot && isParagonSuit;
+        playerRig.darkKnightHeadGroup.visible = !isFirstPersonFoot && isDarkKnightSuit;
+        playerRig.desertHeadGroup.visible = !isFirstPersonFoot && isDesertSuit;
+        playerRig.capeTopPivot.visible = !isFirstPersonFoot && (isParagonSuit || isDarkKnightSuit);
+        playerRig.paragonCapeMeshes.forEach((m) => (m.visible = isParagonSuit));
+        playerRig.darkKnightCapeMeshes.forEach((m) => (m.visible = isDarkKnightSuit));
+        playerRig.sunburstHeadGroup.visible = !isFirstPersonFoot && isSunburstSuit;
+        playerRig.sunburstCloudRing.visible = !isFirstPersonFoot && isSunburstSuit;
+        playerRig.narutoHeadGroup.visible = !isFirstPersonFoot && isNarutoSuit;
+        playerRig.narutoSageItems.forEach((o) => {
+          o.visible = !isFirstPersonFoot && isNarutoSage;
+        });
+        playerRig.narutoTrackItems.forEach((o) => {
+          o.visible = !isFirstPersonFoot && isNarutoTrack;
+        });
+        playerRig.gokuHeadGroup.visible = !isFirstPersonFoot && isGokuSuit;
+        playerRig.gokuGearItems.forEach((o) => {
+          o.visible = !isFirstPersonFoot && isGokuSuit;
+        });
         playerRig.hairMesh.visible = !isFirstPersonFoot && !isSpecialOutfit;
         playerRig.arachnidMaskGroup.visible = !isFirstPersonFoot && store.outfitId === 'arachnid_suit';
         playerRig.tacticalGearGroup.visible = !isFirstPersonFoot && store.outfitId === 'tactical_operator';
@@ -1927,7 +2574,7 @@ export function GameCanvas() {
 
         playerRig.group.position.set(sim.px, sim.py, sim.pz);
         playerRig.group.rotation.y = sim.protY;
-        const groundForShadow = getGroundHeightAt(sim.px, sim.pz);
+        const groundForShadow = getGroundHeightAt(sim.px, sim.pz, sim.py);
         playerRig.shadowPlane.position.y = Math.min(0.02, groundForShadow - sim.py + 0.02);
         const shadowMat = playerRig.shadowPlane.material as THREE.MeshBasicMaterial;
         shadowMat.opacity = inWaterNow ? 0 : Math.max(0.08, 0.48 - Math.max(0, sim.py - groundForShadow) * 0.022);
@@ -1943,23 +2590,31 @@ export function GameCanvas() {
             8,
             dt
           );
-          playerRig.rightArm.rotation.x =
-            sim.aimHoldTimer > 0
-              ? weaponId === 'unarmed'
-                ? -Math.PI * 0.58
-                : -Math.PI * 0.48 - sim.muzzleTimer * 2.2
-              : THREE.MathUtils.damp(
-                  playerRig.rightArm.rotation.x,
-                  inputMag > 0.1 ? -0.35 : -0.45 - Math.sin(elapsed * 2.8) * 0.08,
-                  8,
-                  dt
-                );
+          if (sim.aimHoldTimer > 0 && weaponId === 'sword') {
+            const slashT = 1 - Math.min(1, sim.aimHoldTimer / 0.42);
+            playerRig.rightArm.rotation.x = -Math.PI * 0.85 + slashT * Math.PI * 0.72;
+            playerRig.rightArm.rotation.z = -0.35 + slashT * 0.75;
+          } else {
+            playerRig.rightArm.rotation.z = 0;
+            playerRig.rightArm.rotation.x =
+              sim.aimHoldTimer > 0
+                ? weaponId === 'unarmed'
+                  ? -Math.PI * 0.58
+                  : -Math.PI * 0.48 - sim.muzzleTimer * 2.2
+                : THREE.MathUtils.damp(
+                    playerRig.rightArm.rotation.x,
+                    inputMag > 0.1 ? -0.35 : -0.45 - Math.sin(elapsed * 2.8) * 0.08,
+                    8,
+                    dt
+                  );
+          }
           playerRig.leftLeg.rotation.x = THREE.MathUtils.damp(playerRig.leftLeg.rotation.x, 0.18, 8, dt);
           playerRig.rightLeg.rotation.x = THREE.MathUtils.damp(playerRig.rightLeg.rotation.x, 0.08, 8, dt);
         } else if (inWaterNow) {
           playerRig.bodyGroup.rotation.x = 0.65;
           playerRig.leftArm.rotation.x = -Math.PI * 0.55 + Math.sin(elapsed * 5) * 0.55;
           playerRig.rightArm.rotation.x = -Math.PI * 0.55 - Math.sin(elapsed * 5) * 0.55;
+          playerRig.rightArm.rotation.z = 0;
           playerRig.leftLeg.rotation.x = Math.sin(elapsed * 6) * 0.45;
           playerRig.rightLeg.rotation.x = -Math.sin(elapsed * 6) * 0.45;
         } else {
@@ -1967,18 +2622,61 @@ export function GameCanvas() {
           playerRig.leftLeg.rotation.x = isCrouchingNow ? -0.35 + swing * 0.6 : swing;
           playerRig.rightLeg.rotation.x = isCrouchingNow ? -0.35 - swing * 0.6 : -swing;
           playerRig.leftArm.rotation.x = -swing * 0.75;
-          playerRig.rightArm.rotation.x =
-            sim.aimHoldTimer > 0
-              ? weaponId === 'unarmed'
-                ? -Math.PI * 0.58
-                : -Math.PI * 0.48 - sim.muzzleTimer * 2.2
-              : swing * 0.75;
+          if (sim.aimHoldTimer > 0 && weaponId === 'sword') {
+            const slashT = 1 - Math.min(1, sim.aimHoldTimer / 0.42);
+            playerRig.rightArm.rotation.x = -Math.PI * 0.85 + slashT * Math.PI * 0.72;
+            playerRig.rightArm.rotation.z = -0.35 + slashT * 0.75;
+          } else {
+            playerRig.rightArm.rotation.z = 0;
+            playerRig.rightArm.rotation.x =
+              sim.aimHoldTimer > 0
+                ? weaponId === 'unarmed'
+                  ? -Math.PI * 0.58
+                  : -Math.PI * 0.48 - sim.muzzleTimer * 2.2
+                : swing * 0.75;
+          }
           playerRig.bodyGroup.position.y = isCrouchingNow
             ? -0.34
             : inputMag > 0.05
               ? Math.abs(Math.sin(sim.walkCycle)) * 0.06
               : 0;
         }
+
+        // Flowing 2-segment Cape Physics for Paragon & Dark Knight Suits
+        if (isParagonSuit || isDarkKnightSuit) {
+          const flutter =
+            Math.sin(elapsed * (sim.isFlying ? 14 : isSprinting ? 10 : 3.2)) *
+            (sim.isFlying ? 0.16 : isSprinting ? 0.12 : 0.035);
+          const targetTopCapeX = sim.isFlying
+            ? inputMag > 0.1
+              ? isSprinting
+                ? 0.48
+                : 0.34
+              : 0.22
+            : inWaterNow
+              ? 0.38
+              : 0.11 + inputMag * (isSprinting ? 0.48 : 0.22);
+          playerRig.capeTopPivot.rotation.x = THREE.MathUtils.damp(
+            playerRig.capeTopPivot.rotation.x,
+            targetTopCapeX + flutter,
+            9,
+            dt
+          );
+          playerRig.capeBottomPivot.rotation.x = THREE.MathUtils.damp(
+            playerRig.capeBottomPivot.rotation.x,
+            -0.08 + flutter * 1.45,
+            10,
+            dt
+          );
+          playerRig.capeBottomPivot.rotation.y = Math.cos(elapsed * 4.2) * 0.05;
+        }
+
+        // Floating Cloud Halo Ring Animation for Sunburst Suit
+        if (isSunburstSuit) {
+          playerRig.sunburstCloudRing.rotation.y = Math.sin(elapsed * 2.2) * 0.08;
+          playerRig.sunburstCloudRing.position.y = Math.sin(elapsed * 3.4) * 0.035;
+        }
+
         if (playerRig.muzzleSprite) {
           playerRig.muzzleSprite.material.opacity = sim.muzzleTimer > 0 ? Math.min(1, sim.muzzleTimer / 0.05) : 0;
         }
@@ -2001,7 +2699,7 @@ export function GameCanvas() {
         } else {
           const camDist = store.cameraMode === 'third_close' ? 3.8 : 5.4;
           const camHeight = (isCrouchingNow ? 1.25 : 1.62) + Math.sin(sim.camPitch) * 3.1;
-          const gHeight = getGroundHeightAt(sim.px, sim.pz);
+          const gHeight = getGroundHeightAt(sim.px, sim.pz, sim.py);
           _camTarget.set(sim.px, sim.py + (isCrouchingNow ? 1.15 : 1.52), sim.pz);
           _camDesired.set(
             sim.px + Math.sin(sim.camYaw) * camDist,
@@ -2083,6 +2781,19 @@ export function GameCanvas() {
 
       // PEDESTRIANS UPDATE
       for (const p of pedestrians) {
+        if (!p.active) {
+          p.rig.group.position.y = -100;
+          const distP = Math.hypot(p.x - sim.px, p.z - sim.pz);
+          if (!p.looted && distP < 2.2 && sim.py < 2.5) {
+            p.looted = true;
+            const cash = Math.floor(90 + Math.random() * 200);
+            store.addMoney(cash);
+            store.pushToast('Searched Civilian', `Looted +$${cash} cash & supplies!`, 'success');
+            audioEngine.playCheckpoint();
+          }
+          continue;
+        }
+
         const distP = Math.hypot(p.x - sim.px, p.z - sim.pz);
         const flee = distP < 9 && sim.py < 3 && sim.activeVehicle && Math.abs(sim.activeVehicle.speed) > 9;
         if (flee) {
@@ -2109,7 +2820,12 @@ export function GameCanvas() {
         p.rig.rightLeg.rotation.x = -sw;
 
         if (distP < 1.9 && sim.py < 2 && sim.activeVehicle && Math.abs(sim.activeVehicle.speed) > 10) {
-          p.x += 6;
+          p.hp = 0;
+          p.active = false;
+          p.rig.group.position.y = -100;
+          const cash = Math.floor(100 + Math.random() * 220);
+          store.addMoney(cash);
+          store.pushToast('Roadside Eliminator', `Looted +$${cash} cash!`, 'success');
           store.triggerCrimeHeat(2);
           audioEngine.playImpact(0.45);
         }
@@ -2429,7 +3145,11 @@ export function GameCanvas() {
       const dt = Math.min(0.05, clock.getDelta());
       const elapsed = clock.elapsedTime;
       stepSimulation(dt, elapsed);
-      renderer.render(scene, camera);
+      if (composer && useGameStore.getState().settings.graphicsQuality === 'high') {
+        composer.render();
+      } else {
+        renderer.render(scene, camera);
+      }
       if (isSoftwareGl) afterDraw(tick);
       else frameId = requestAnimationFrame(tick);
     }
@@ -2456,15 +3176,35 @@ export function GameCanvas() {
       sparkMat.dispose();
       tracerGeo.dispose();
       tracerMat.dispose();
+      heatBeamGeo.dispose();
+      heatBeamMat.dispose();
+      (heatImpactSprite.material as THREE.SpriteMaterial).dispose();
+      shockRingGeo.dispose();
+      shockRingMat.dispose();
       shadowTex.dispose();
+      paragonEmblemTex.dispose();
+      darkKnightEmblemTex.dispose();
+      uzumakiCrestTex.dispose();
+      vehicleTextures.policeDoor?.dispose();
+      vehicleTextures.muscle01?.dispose();
+      vehicleTextures.expressSide?.dispose();
+      vehicleTextures.expressHood?.dispose();
+      vehicleTextures.skylineHood?.dispose();
+      vehicleTextures.skylineSide?.dispose();
       camoTextures.map.dispose();
       camoTextures.normalMap.dispose();
+      desertCamoTextures.map.dispose();
+      desertCamoTextures.normalMap.dispose();
       hoodieTextures.map.dispose();
       hoodieTextures.normalMap.dispose();
       denimTextures.map.dispose();
       denimTextures.normalMap.dispose();
       rainGeo.dispose();
       rainMat.dispose();
+      splashGeo.dispose();
+      splashMat.dispose();
+      composer?.dispose();
+      bloomTarget?.dispose();
       envRT.dispose();
       renderer.dispose();
     };

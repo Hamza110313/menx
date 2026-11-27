@@ -4,6 +4,7 @@ import { MobileControls } from './components/controls/MobileControls';
 import { GameCanvas } from './components/game/GameCanvas';
 import { ActiveWorldModals } from './components/ui/GarageModal';
 import { HUD } from './components/ui/HUD';
+import { InventoryModal } from './components/ui/InventoryModal';
 import { MainMenu } from './components/ui/MainMenu';
 import { PauseMenu } from './components/ui/PauseMenu';
 import { SettingsModal } from './components/ui/SettingsModal';
@@ -21,6 +22,7 @@ export default function App() {
       <MainMenu onOpenSettings={() => setSettingsOpen(true)} />
       <PauseMenu onOpenSettings={() => setSettingsOpen(true)} />
       <ActiveWorldModals />
+      <InventoryModal />
       <WorldMapModal />
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </main>

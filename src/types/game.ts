@@ -15,10 +15,12 @@ export type VehicleClass =
   | 'ambulance'
   | 'helicopter'
   | 'boat'
-  | 'convertible';
+  | 'convertible'
+  | 'horse'
+  | 'tank';
 
-export type WeaponId = 'unarmed' | 'pistol' | 'rifle' | 'shotgun';
-export type CharacterId = 'specter' | 'kade' | 'vex' | 'dante';
+export type WeaponId = 'unarmed' | 'sword' | 'pistol' | 'smg' | 'rifle' | 'shotgun' | 'rpg';
+export type CharacterId = 'sunburst' | 'naruto' | 'goku' | 'paragon' | 'batman' | 'specter' | 'nomad' | 'kade' | 'vex' | 'dante';
 export type CameraMode = 'third_far' | 'third_close' | 'first_person';
 
 export type WeatherType = 'sunny' | 'rain' | 'fog';
@@ -85,6 +87,7 @@ export interface VehicleSpec {
   name: string;
   vehicleClass: VehicleClass;
   price: number;
+  unlockedByDefault?: boolean;
   maxSpeed: number; // m/s (1 m/s = 3.6 km/h)
   acceleration: number;
   braking: number;
@@ -127,6 +130,7 @@ export interface BuildingCollider {
     | 'skyscraper'
     | 'residential'
     | 'colonial_house'
+    | 'sage_colonial'
     | 'barn'
     | 'mall'
     | 'garage'
@@ -138,6 +142,7 @@ export interface BuildingCollider {
     | 'airport_tower'
     | 'hangar'
     | 'safehouse'
+    | 'gothic_church'
     | 'prop';
   color?: string;
   enterable?: boolean;
@@ -190,7 +195,15 @@ export interface MissionDefinition {
 }
 
 export interface InventoryItem {
-  id: 'medkit' | 'repair_kit' | 'armor_vest' | 'nitro_can';
+  id:
+    | 'medkit'
+    | 'repair_kit'
+    | 'armor_vest'
+    | 'nitro_can'
+    | 'energy_drink'
+    | 'adrenaline_shot'
+    | 'emp_jammer'
+    | 'ammo_crate';
   name: string;
   description: string;
   price: number;
@@ -260,6 +273,7 @@ export interface LiveTelemetry {
 
 export interface SaveDataV1 {
   version: 1;
+  characterRev?: number;
   savedAt: string;
   activeCharacterId: CharacterId;
   playerPos: Vec3Tuple;

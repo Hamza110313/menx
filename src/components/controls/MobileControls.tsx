@@ -20,11 +20,26 @@ export function MobileControls() {
   const screen = useGameStore((s) => s.screen);
   const activeModal = useGameStore((s) => s.activeModal);
   const showMobileControls = useGameStore((s) => s.settings.showMobileControls);
+  const activeCharacterId = useGameStore((s) => s.activeCharacterId);
+  const outfitId = useGameStore((s) => s.outfitId);
   const inVehicle = useGameStore((s) => s.telemetry.inVehicle);
   const isFlying = useGameStore((s) => s.telemetry.isFlying);
   const vehicleClass = useGameStore((s) => s.telemetry.vehicleClass);
   const nearbyPrompt = useGameStore((s) => s.telemetry.nearbyPrompt);
   const cycleCameraMode = useGameStore((s) => s.cycleCameraMode);
+
+  const isSuperHero =
+    activeCharacterId === 'sunburst' ||
+    outfitId === 'sunburst_nika' ||
+    activeCharacterId === 'paragon' ||
+    outfitId === 'paragon_suit' ||
+    activeCharacterId === 'batman' ||
+    outfitId === 'dark_knight' ||
+    activeCharacterId === 'naruto' ||
+    outfitId === 'naruto_sage_cloak' ||
+    outfitId === 'naruto_tracksuit' ||
+    activeCharacterId === 'goku' ||
+    outfitId === 'goku_damaged_gi';
 
   const [isTouchDevice, setIsTouchDevice] = useState(false);
   const [knobOffset, setKnobOffset] = useState({ x: 0, y: 0 });
@@ -243,6 +258,20 @@ export function MobileControls() {
                 aria-label="Descend"
               >
                 <ChevronDown className="h-5 w-5" />
+              </button>
+            )}
+            {isSuperHero && (
+              <button
+                type="button"
+                onClick={() => {
+                  audioEngine.init();
+                  gameInput.shockwavePressed = true;
+                }}
+                className="flex h-12 items-center gap-1 rounded-xl border border-rose-400/55 bg-rose-600/90 px-3 text-xs font-bold text-white shadow-lg active:bg-rose-500"
+                aria-label="Shockwave Slam"
+              >
+                <Zap className="h-4 w-4" />
+                <span>Slam</span>
               </button>
             )}
             <button

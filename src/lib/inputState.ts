@@ -24,6 +24,7 @@ export interface InputState {
   headlightTogglePressed: boolean;
   taxiTogglePressed: boolean;
   flyTogglePressed: boolean;
+  shockwavePressed: boolean;
 }
 
 export const gameInput: InputState = {
@@ -48,6 +49,7 @@ export const gameInput: InputState = {
   headlightTogglePressed: false,
   taxiTogglePressed: false,
   flyTogglePressed: false,
+  shockwavePressed: false,
 };
 
 export function resetContinuousInputs(): void {

@@ -6,30 +6,43 @@ const SAVE_KEY = 'solaris_bay_city_crime_save_v1';
 export function createInitialSaveData(existingSettings?: GameSettings): SaveDataV1 {
   return {
     version: 1,
+    characterRev: 3,
     savedAt: new Date().toISOString(),
-    activeCharacterId: 'specter',
-    playerPos: { x: 8, y: 0, z: 12 }, // Downtown Plaza near Elena Vance & starter convertible
+    activeCharacterId: 'sunburst',
+    playerPos: { x: 8, y: 0, z: 12 }, // Downtown Plaza near starter roadster
     playerRotY: Math.PI,
     health: 100,
-    armor: 35,
+    armor: 50,
     stamina: 100,
     money: 2200,
     bankBalance: 5000,
-    outfitId: PLAYABLE_CHARACTERS.specter.outfitId,
-    ownedVehicleIds: ['solaris_spyder', 'veloce_gt', 'mustang_gt'],
+    outfitId: PLAYABLE_CHARACTERS.sunburst.outfitId,
+    ownedVehicleIds: [
+      'solaris_spyder',
+      'veloce_gt',
+      'mustang_gt',
+      ...Object.values(VEHICLE_SPECS)
+        .filter((v) => v.unlockedByDefault)
+        .map((v) => v.id),
+    ].filter((id, i, arr) => arr.indexOf(id) === i),
     vehicleColors: {
       solaris_spyder: VEHICLE_SPECS.solaris_spyder.defaultColor,
       veloce_gt: VEHICLE_SPECS.veloce_gt.defaultColor,
       mustang_gt: VEHICLE_SPECS.mustang_gt.defaultColor,
+      skyline_r34: VEHICLE_SPECS.skyline_r34.defaultColor,
+      chestnut_stallion: VEHICLE_SPECS.chestnut_stallion.defaultColor,
     },
     activeVehicleSpecId: 'solaris_spyder',
     ownedProperties: [],
-    unlockedWeapons: ['unarmed', 'pistol'],
+    unlockedWeapons: ['unarmed', 'pistol', 'sword'],
     weaponAmmo: {
       unarmed: 0,
+      sword: 0,
       pistol: 60,
+      smg: 0,
       rifle: 0,
       shotgun: 0,
+      rpg: 0,
     },
     completedMissionIds: [],
     activeMissionId: null,
@@ -39,6 +52,10 @@ export function createInitialSaveData(existingSettings?: GameSettings): SaveData
       armor_vest: 0,
       repair_kit: 1,
       nitro_can: 1,
+      energy_drink: 1,
+      adrenaline_shot: 1,
+      emp_jammer: 0,
+      ammo_crate: 1,
     },
     timeOfDay: 14.5, // Sunny afternoon
     weather: 'sunny',
@@ -55,7 +72,18 @@ function isValidWeather(val: unknown): val is WeatherType {
 }
 
 function isValidCharacter(val: unknown): val is CharacterId {
-  return val === 'specter' || val === 'kade' || val === 'vex' || val === 'dante';
+  return (
+    val === 'sunburst' ||
+    val === 'naruto' ||
+    val === 'goku' ||
+    val === 'paragon' ||
+    val === 'batman' ||
+    val === 'nomad' ||
+    val === 'specter' ||
+    val === 'kade' ||
+    val === 'vex' ||
+    val === 'dante'
+  );
 }
 
 export function validateSaveData(raw: unknown): SaveDataV1 | null {
@@ -76,6 +104,11 @@ export function validateSaveData(raw: unknown): SaveDataV1 | null {
     ? obj.ownedVehicleIds.filter((id): id is string => typeof id === 'string' && id in VEHICLE_SPECS)
     : ['veloce_gt'];
   if (!owned.includes('veloce_gt')) owned.unshift('veloce_gt');
+  for (const spec of Object.values(VEHICLE_SPECS)) {
+    if (spec.unlockedByDefault && !owned.includes(spec.id)) {
+      owned.push(spec.id);
+    }
+  }
 
   const rawSettings = (obj.settings && typeof obj.settings === 'object' ? obj.settings : {}) as Record<
     string,
@@ -131,16 +164,29 @@ export function validateSaveData(raw: unknown): SaveDataV1 | null {
     armor_vest: isFiniteNum(rawInv.armor_vest) ? Math.max(0, Math.floor(rawInv.armor_vest)) : 0,
     repair_kit: isFiniteNum(rawInv.repair_kit) ? Math.max(0, Math.floor(rawInv.repair_kit)) : 1,
     nitro_can: isFiniteNum(rawInv.nitro_can) ? Math.max(0, Math.floor(rawInv.nitro_can)) : 1,
+    energy_drink: isFiniteNum(rawInv.energy_drink) ? Math.max(0, Math.floor(rawInv.energy_drink)) : 1,
+    adrenaline_shot: isFiniteNum(rawInv.adrenaline_shot)
+      ? Math.max(0, Math.floor(rawInv.adrenaline_shot))
+      : 1,
+    emp_jammer: isFiniteNum(rawInv.emp_jammer) ? Math.max(0, Math.floor(rawInv.emp_jammer)) : 0,
+    ammo_crate: isFiniteNum(rawInv.ammo_crate) ? Math.max(0, Math.floor(rawInv.ammo_crate)) : 1,
   };
 
   const rawWeapons = Array.isArray(obj.unlockedWeapons)
     ? obj.unlockedWeapons.filter(
         (w): w is WeaponId =>
-          w === 'unarmed' || w === 'pistol' || w === 'rifle' || w === 'shotgun'
+          w === 'unarmed' ||
+          w === 'sword' ||
+          w === 'pistol' ||
+          w === 'smg' ||
+          w === 'rifle' ||
+          w === 'shotgun' ||
+          w === 'rpg'
       )
-    : (['unarmed', 'pistol'] as WeaponId[]);
+    : (['unarmed', 'pistol', 'sword'] as WeaponId[]);
   if (!rawWeapons.includes('unarmed')) rawWeapons.unshift('unarmed');
   if (!rawWeapons.includes('pistol')) rawWeapons.push('pistol');
+  if (!rawWeapons.includes('sword')) rawWeapons.push('sword');
 
   const rawAmmo =
     obj.weaponAmmo && typeof obj.weaponAmmo === 'object'
@@ -148,23 +194,39 @@ export function validateSaveData(raw: unknown): SaveDataV1 | null {
       : {};
   const weaponAmmo: Record<WeaponId, number> = {
     unarmed: 0,
+    sword: 0,
     pistol: isFiniteNum(rawAmmo.pistol) ? Math.max(0, Math.floor(rawAmmo.pistol)) : 60,
+    smg: isFiniteNum(rawAmmo.smg) ? Math.max(0, Math.floor(rawAmmo.smg)) : 0,
     rifle: isFiniteNum(rawAmmo.rifle) ? Math.max(0, Math.floor(rawAmmo.rifle)) : 0,
     shotgun: isFiniteNum(rawAmmo.shotgun) ? Math.max(0, Math.floor(rawAmmo.shotgun)) : 0,
+    rpg: isFiniteNum(rawAmmo.rpg) ? Math.max(0, Math.floor(rawAmmo.rpg)) : 0,
   };
+
+  const needsHeroRev = obj.characterRev !== 3;
+  const resolvedChar: CharacterId = needsHeroRev
+    ? 'sunburst'
+    : isValidCharacter(obj.activeCharacterId)
+      ? obj.activeCharacterId
+      : 'sunburst';
+  const resolvedOutfit = needsHeroRev
+    ? 'sunburst_nika'
+    : typeof obj.outfitId === 'string'
+      ? obj.outfitId
+      : 'sunburst_nika';
 
   return {
     version: 1,
+    characterRev: 3,
     savedAt: typeof obj.savedAt === 'string' ? obj.savedAt : new Date().toISOString(),
-    activeCharacterId: isValidCharacter(obj.activeCharacterId) ? obj.activeCharacterId : 'specter',
+    activeCharacterId: resolvedChar,
     playerPos: { x: clampX, y: clampY, z: clampZ },
     playerRotY: isFiniteNum(obj.playerRotY) ? obj.playerRotY : 0,
     health: isFiniteNum(obj.health) ? Math.max(10, Math.min(100, obj.health)) : 100,
-    armor: isFiniteNum(obj.armor) ? Math.max(0, Math.min(100, obj.armor)) : 25,
+    armor: isFiniteNum(obj.armor) ? Math.max(0, Math.min(100, obj.armor)) : 50,
     stamina: isFiniteNum(obj.stamina) ? Math.max(0, Math.min(100, obj.stamina)) : 100,
     money: isFiniteNum(obj.money) ? Math.max(0, Math.floor(obj.money)) : 1500,
     bankBalance: isFiniteNum(obj.bankBalance) ? Math.max(0, Math.floor(obj.bankBalance)) : 5000,
-    outfitId: typeof obj.outfitId === 'string' ? obj.outfitId : 'arachnid_suit',
+    outfitId: resolvedOutfit,
     ownedVehicleIds: owned,
     vehicleColors,
     activeVehicleSpecId:

@@ -120,7 +120,7 @@ export function MainMenu({ onOpenSettings }: MainMenuProps) {
 
         {/* Compact Controls Summary */}
         <div className="mt-8 border-t border-white/10 pt-4 text-xs text-zinc-400 max-w-lg">
-          WASD Move / Drive · Drag Look · V Camera · 1-4 Weapon · G Map · Tab Hero · E Interact · Esc Pause
+          WASD Move / Drive · Drag Look · V Camera · 1-6 Weapon · G Map · Tab Hero · E Interact · Esc Pause
         </div>
       </motion.div>
 

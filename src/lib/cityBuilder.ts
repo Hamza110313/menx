@@ -6,22 +6,31 @@ import {
   ROAD_WIDTH,
 } from './gameConfig';
 import {
+  createArmyWallTexture,
   createAsphaltTextures,
   createBarnTextures,
+  createBrickApartmentTextures,
   createColonialSidingTextures,
+  createCorrugatedMetalTextures,
   createDesertSandTexture,
   createGlowSpriteTexture,
+  createGothicStoneTextures,
   createGrassTexture,
   createInteriorFloorTexture,
   createIntersectionTexture,
+  createLeafCanopyTexture,
   createResidentialTexture,
+  createRollingHillGrassTexture,
   createRoofShingleTextures,
   createRunwayTexture,
+  createSageClapboardTextures,
   createSandTexture,
   createSidewalkTextures,
   createSkyscraperFacadeTextures,
+  createTankerHullTextures,
   createWaterNormalMap,
 } from './textures';
+import { getNorthernHillsElevation } from './physics';
 
 export interface TrafficLightNode {
   x: number;
@@ -61,6 +70,7 @@ export function buildSolarisCity(maxAnisotropy: number): CityBuildResult {
   const skyLime = createSkyscraperFacadeTextures(maxAnisotropy, '#cbc6bc', 'limestone_classic');
   const skyPacks = [skyDark, skyLime, skyStripe, skyTerra];
   const resTex = createResidentialTexture(maxAnisotropy, '#78716c');
+  const brickTex = createBrickApartmentTextures(maxAnisotropy);
   const colonialSiding = createColonialSidingTextures(maxAnisotropy);
   const roofShingle = createRoofShingleTextures(maxAnisotropy);
   const barnSiding = createBarnTextures(maxAnisotropy);
@@ -69,10 +79,18 @@ export function buildSolarisCity(maxAnisotropy: number): CityBuildResult {
   const runwayTex = createRunwayTexture(maxAnisotropy);
   const interiorFloorTex = createInteriorFloorTexture(maxAnisotropy);
   const desertSandTex = createDesertSandTexture(maxAnisotropy);
+  const corrugatedMetal = createCorrugatedMetalTextures(maxAnisotropy);
+  const tankerTex = createTankerHullTextures(maxAnisotropy);
+  const sageClapboard = createSageClapboardTextures(maxAnisotropy);
+  const leafCanopyTex = createLeafCanopyTexture(maxAnisotropy);
+  const gothicStone = createGothicStoneTextures(maxAnisotropy);
+  const rollingHillGrassTex = createRollingHillGrassTexture(maxAnisotropy);
+  const armyWallTex = createArmyWallTexture(maxAnisotropy);
 
   disposables.push(
     asphaltPair.map,
     asphaltPair.normalMap,
+    asphaltPair.roughnessMap,
     intersectionTex,
     sidewalkPair.map,
     sidewalkPair.normalMap,
@@ -80,6 +98,8 @@ export function buildSolarisCity(maxAnisotropy: number): CityBuildResult {
     sandTex,
     ...skyPacks.flatMap((p) => [p.dayMap, p.nightMap, p.normalMap]),
     resTex,
+    brickTex.map,
+    brickTex.normalMap,
     colonialSiding.map,
     colonialSiding.normalMap,
     roofShingle.map,
@@ -90,7 +110,19 @@ export function buildSolarisCity(maxAnisotropy: number): CityBuildResult {
     glowSpriteTex,
     runwayTex,
     interiorFloorTex,
-    desertSandTex
+    desertSandTex,
+    corrugatedMetal.map,
+    corrugatedMetal.normalMap,
+    tankerTex.hullSide,
+    tankerTex.helipad,
+    tankerTex.funnel,
+    sageClapboard.map,
+    sageClapboard.normalMap,
+    leafCanopyTex,
+    gothicStone.map,
+    gothicStone.normalMap,
+    rollingHillGrassTex,
+    armyWallTex
   );
 
   // 1. Extended Base Terrain
@@ -158,13 +190,16 @@ export function buildSolarisCity(maxAnisotropy: number): CityBuildResult {
     }
   }
 
-  // 4. Normal-Mapped Asphalt Road Grid + Crosswalk Intersections (wet-road capable!)
+  // 4. Normal-Mapped Asphalt Road Grid + Puddle Roughness + Crosswalks (wet-road capable!)
   const asphaltNSMap = asphaltPair.map.clone();
   asphaltNSMap.repeat.set(1, 22);
   asphaltNSMap.needsUpdate = true;
   const asphaltNSNorm = asphaltPair.normalMap.clone();
   asphaltNSNorm.repeat.set(1, 22);
   asphaltNSNorm.needsUpdate = true;
+  const asphaltNSRough = asphaltPair.roughnessMap.clone();
+  asphaltNSRough.repeat.set(1, 22);
+  asphaltNSRough.needsUpdate = true;
 
   const asphaltEWMap = asphaltPair.map.clone();
   asphaltEWMap.repeat.set(1, 22);
@@ -172,14 +207,18 @@ export function buildSolarisCity(maxAnisotropy: number): CityBuildResult {
   const asphaltEWNorm = asphaltPair.normalMap.clone();
   asphaltEWNorm.repeat.set(1, 22);
   asphaltEWNorm.needsUpdate = true;
+  const asphaltEWRough = asphaltPair.roughnessMap.clone();
+  asphaltEWRough.repeat.set(1, 22);
+  asphaltEWRough.needsUpdate = true;
 
   const asphaltMatNS = new THREE.MeshStandardMaterial({
     map: asphaltNSMap,
     normalMap: asphaltNSNorm,
-    normalScale: new THREE.Vector2(0.6, 0.6),
-    roughness: 0.82,
-    metalness: 0.08,
-    envMapIntensity: 0.85,
+    normalScale: new THREE.Vector2(0.7, 0.7),
+    roughnessMap: asphaltNSRough,
+    roughness: 0.85,
+    metalness: 0.1,
+    envMapIntensity: 0.95,
     polygonOffset: true,
     polygonOffsetFactor: -1,
     polygonOffsetUnits: -1,
@@ -188,10 +227,11 @@ export function buildSolarisCity(maxAnisotropy: number): CityBuildResult {
   const asphaltMatEW = new THREE.MeshStandardMaterial({
     map: asphaltEWMap,
     normalMap: asphaltEWNorm,
-    normalScale: new THREE.Vector2(0.6, 0.6),
-    roughness: 0.82,
-    metalness: 0.08,
-    envMapIntensity: 0.85,
+    normalScale: new THREE.Vector2(0.7, 0.7),
+    roughnessMap: asphaltEWRough,
+    roughness: 0.85,
+    metalness: 0.1,
+    envMapIntensity: 0.95,
     polygonOffset: true,
     polygonOffsetFactor: -1,
     polygonOffsetUnits: -1,
@@ -200,18 +240,21 @@ export function buildSolarisCity(maxAnisotropy: number): CityBuildResult {
   const junctionMat = new THREE.MeshStandardMaterial({
     map: intersectionTex,
     normalMap: asphaltPair.normalMap,
-    normalScale: new THREE.Vector2(0.5, 0.5),
-    roughness: 0.82,
-    metalness: 0.08,
-    envMapIntensity: 0.85,
+    normalScale: new THREE.Vector2(0.58, 0.58),
+    roughnessMap: asphaltPair.roughnessMap,
+    roughness: 0.85,
+    metalness: 0.1,
+    envMapIntensity: 0.95,
   });
 
   const asphaltMaterials = [asphaltMatNS, asphaltMatEW, junctionMat];
   disposables.push(
     asphaltNSMap,
     asphaltNSNorm,
+    asphaltNSRough,
     asphaltEWMap,
     asphaltEWNorm,
+    asphaltEWRough,
     asphaltMatNS,
     asphaltMatEW,
     junctionMat
@@ -269,8 +312,9 @@ export function buildSolarisCity(maxAnisotropy: number): CityBuildResult {
     new THREE.MeshPhysicalMaterial({
       color: '#0284c7',
       normalMap: waterNormalMap,
-      roughness: 0.08,
+      roughness: 0.04,
       clearcoat: 1.0,
+      envMapIntensity: 1.8,
     })
   );
   fountainWater.position.set(120, 0.38, 26);
@@ -303,12 +347,12 @@ export function buildSolarisCity(maxAnisotropy: number): CityBuildResult {
   const oceanMat = new THREE.MeshPhysicalMaterial({
     color: '#0369a1',
     normalMap: waterNormalMap,
-    normalScale: new THREE.Vector2(0.7, 0.7),
-    roughness: 0.08,
-    metalness: 0.16,
+    normalScale: new THREE.Vector2(0.85, 0.85),
+    roughness: 0.05,
+    metalness: 0.22,
     clearcoat: 1.0,
-    clearcoatRoughness: 0.06,
-    envMapIntensity: 1.5,
+    clearcoatRoughness: 0.04,
+    envMapIntensity: 1.85,
   });
   const oceanMesh = new THREE.Mesh(oceanGeo, oceanMat);
   oceanMesh.rotation.x = -Math.PI / 2;
@@ -367,6 +411,131 @@ export function buildSolarisCity(maxAnisotropy: number): CityBuildResult {
   seawallR.position.x = 106;
   cityGroup.add(seawallL, seawallR);
 
+  // Golden Beach Umbrella, Green-Striped Folding Chair & Beach Ball Sets
+  const stripCanvas = document.createElement('canvas');
+  stripCanvas.width = 128;
+  stripCanvas.height = 128;
+  const sCtx = stripCanvas.getContext('2d')!;
+  for (let s = 0; s < 8; s++) {
+    sCtx.fillStyle = s % 2 === 0 ? '#15803d' : '#ede6d1';
+    sCtx.fillRect(s * 16, 0, 16, 128);
+  }
+  const chairStripeTex = new THREE.CanvasTexture(stripCanvas);
+  chairStripeTex.colorSpace = THREE.SRGBColorSpace;
+
+  const ballCanvas = document.createElement('canvas');
+  ballCanvas.width = 256;
+  ballCanvas.height = 128;
+  const bCtx = ballCanvas.getContext('2d')!;
+  const ballColors = ['#f8fafc', '#e11d48', '#facc15', '#f8fafc', '#0284c7', '#22c55e'];
+  for (let i = 0; i < 6; i++) {
+    bCtx.fillStyle = ballColors[i];
+    bCtx.fillRect((i * 256) / 6, 0, 256 / 6 + 1, 128);
+  }
+  bCtx.fillStyle = '#0ea5e9';
+  bCtx.fillRect(0, 0, 256, 14);
+  bCtx.fillRect(0, 114, 256, 14);
+  const beachBallTex = new THREE.CanvasTexture(ballCanvas);
+  beachBallTex.colorSpace = THREE.SRGBColorSpace;
+
+  const umbPoleMat = new THREE.MeshStandardMaterial({ color: '#e4e4e7', metalness: 0.72, roughness: 0.25 });
+  const umbOrangeMat = new THREE.MeshStandardMaterial({ color: '#f97316', roughness: 0.65, side: THREE.DoubleSide });
+  const umbBlueMat = new THREE.MeshStandardMaterial({ color: '#0ea5e9', roughness: 0.65, side: THREE.DoubleSide });
+  const chairWoodMat = new THREE.MeshStandardMaterial({ color: '#c99b6d', roughness: 0.78 });
+  const chairClothMat = new THREE.MeshStandardMaterial({ map: chairStripeTex, roughness: 0.85, side: THREE.DoubleSide });
+  const ballMat = new THREE.MeshPhysicalMaterial({ map: beachBallTex, roughness: 0.22, clearcoat: 0.65 });
+
+  const beachSetCoords: Array<[number, number, number]> = [
+    [-108, 198, 0.18],
+    [-68, 203, -0.14],
+    [-32, 197, 0.22],
+    [34, 199, -0.18],
+    [72, 204, 0.12],
+    [102, 196, -0.25],
+  ];
+  for (const [bx, bz, yaw] of beachSetCoords) {
+    const setG = new THREE.Group();
+    setG.position.set(bx, -0.34, bz);
+    setG.rotation.y = yaw;
+
+    // Aluminum pole + Orange/Sky-Blue 8-panel scalloped beach umbrella
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.042, 0.045, 2.75, 8), umbPoleMat);
+    pole.position.y = 1.38;
+    pole.castShadow = true;
+    setG.add(pole);
+
+    const panelGeo = new THREE.ConeGeometry(1.55, 0.56, 8, 1, true, 0, Math.PI / 4);
+    for (let p = 0; p < 8; p++) {
+      const wedge = new THREE.Mesh(panelGeo, p % 2 === 0 ? umbOrangeMat : umbBlueMat);
+      wedge.position.y = 2.66;
+      wedge.rotation.y = (p * Math.PI) / 4;
+      wedge.castShadow = true;
+      setG.add(wedge);
+    }
+
+    // Beechwood folding deck chair + green & cream striped cloth
+    const chairG = new THREE.Group();
+    chairG.position.set(1.05, 0.0, 0.35);
+    chairG.rotation.y = -0.35;
+    for (const side of [-0.42, 0.42]) {
+      const rail1 = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.055, 1.35), chairWoodMat);
+      rail1.position.set(side, 0.48, -0.05);
+      rail1.rotation.x = 0.68;
+      const rail2 = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.055, 1.15), chairWoodMat);
+      rail2.position.set(side, 0.24, 0.05);
+      rail2.rotation.x = -0.32;
+      chairG.add(rail1, rail2);
+    }
+    const sling = new THREE.Mesh(new THREE.BoxGeometry(0.78, 0.028, 1.24), chairClothMat);
+    sling.position.set(0, 0.45, -0.05);
+    sling.rotation.x = 0.66;
+    sling.castShadow = true;
+    chairG.add(sling);
+    setG.add(chairG);
+
+    // Colorful beach ball on sand
+    const ball = new THREE.Mesh(new THREE.SphereGeometry(0.28, 16, 14), ballMat);
+    ball.position.set(-0.78, 0.26, 0.42);
+    ball.rotation.set(0.4, yaw * 1.5, 0.25);
+    ball.castShadow = true;
+    setG.add(ball);
+
+    cityGroup.add(setG);
+  }
+  disposables.push(
+    chairStripeTex,
+    beachBallTex,
+    umbPoleMat,
+    umbOrangeMat,
+    umbBlueMat,
+    chairWoodMat,
+    chairClothMat,
+    ballMat
+  );
+
+  // 7. Rolling Lush Green Grassy Hills Perimeter + Distant Snow-Capped Mountains
+  const rollingHillsGeo = new THREE.PlaneGeometry(600, 265, 88, 40);
+  rollingHillsGeo.rotateX(-Math.PI / 2);
+  const rhPos = rollingHillsGeo.attributes.position as THREE.BufferAttribute;
+  const rhCenterZ = -235;
+  for (let i = 0; i < rhPos.count; i++) {
+    const wx = rhPos.getX(i);
+    const wz = rhPos.getZ(i) + rhCenterZ;
+    const elev = getNorthernHillsElevation(wx, wz);
+    rhPos.setY(i, elev > 0.02 ? elev : -0.14);
+  }
+  rollingHillsGeo.computeVertexNormals();
+  const rollingHillsMat = new THREE.MeshStandardMaterial({
+    map: rollingHillGrassTex,
+    roughness: 0.9,
+    metalness: 0.02,
+  });
+  const rollingHillsMesh = new THREE.Mesh(rollingHillsGeo, rollingHillsMat);
+  rollingHillsMesh.position.set(0, 0, rhCenterZ);
+  rollingHillsMesh.receiveShadow = true;
+  cityGroup.add(rollingHillsMesh);
+  disposables.push(rollingHillsGeo, rollingHillsMat);
+
   const mtnGeo = new THREE.PlaneGeometry(920, 260, 76, 26);
   mtnGeo.rotateX(-Math.PI / 2);
   const mtnPos = mtnGeo.attributes.position as THREE.BufferAttribute;
@@ -405,7 +574,7 @@ export function buildSolarisCity(maxAnisotropy: number): CityBuildResult {
     metalness: 0.04,
   });
   const mountainRange = new THREE.Mesh(mtnGeo, mtnMat);
-  mountainRange.position.set(0, -0.5, -355);
+  mountainRange.position.set(0, -0.5, -415);
   cityGroup.add(mountainRange);
   disposables.push(mtnGeo, mtnMat);
 
@@ -461,12 +630,14 @@ export function buildSolarisCity(maxAnisotropy: number): CityBuildResult {
 
   let skyIdx = 0;
   for (const b of CITY_BUILDINGS) {
+    if (b.id.startsWith('army_wall_') || b.id.startsWith('army_tower_')) continue;
     const bGroup = new THREE.Group();
     bGroup.position.set(b.x, 0, b.z);
 
     if (b.kind === 'skyscraper') {
       const pack = skyPacks[skyIdx % skyPacks.length];
       const isLimestone = skyIdx % skyPacks.length === 1;
+      const isCreamModern = skyIdx % skyPacks.length === 2;
       const isRounded = b.id === 'dt_ne_2' || b.id === 'dt_sw_3';
       skyIdx++;
 
@@ -477,26 +648,40 @@ export function buildSolarisCity(maxAnisotropy: number): CityBuildResult {
         emissiveMap: pack.nightMap,
         emissive: new THREE.Color('#ffffff'),
         emissiveIntensity: 0.0,
-        roughness: isLimestone ? 0.62 : 0.22,
-        metalness: isLimestone ? 0.12 : 0.6,
+        roughness: isLimestone || isCreamModern ? 0.52 : 0.22,
+        metalness: isLimestone || isCreamModern ? 0.14 : 0.6,
         envMapIntensity: 1.4,
       });
       skyscraperMaterials.push(mat);
 
       const podiumH = Math.min(6.4, b.height * 0.16);
-      const podium = new THREE.Mesh(new THREE.BoxGeometry(b.width, podiumH, b.depth), trimMat);
+      const creamTrimMat = new THREE.MeshStandardMaterial({ color: '#f3efe4', roughness: 0.55 });
+      if (isCreamModern) disposables.push(creamTrimMat);
+      const podium = new THREE.Mesh(
+        new THREE.BoxGeometry(b.width, podiumH, b.depth),
+        isCreamModern ? creamTrimMat : trimMat
+      );
       podium.position.y = podiumH * 0.5;
       podium.castShadow = true;
       podium.receiveShadow = true;
       bGroup.add(podium);
 
-      // Warm Ground-Floor Lobby Glazing Band
+      // Warm Ground-Floor Lobby Glazing Band + Cream Overhang Cornice
       const lobbyGlass = new THREE.Mesh(
         new THREE.BoxGeometry(b.width + 0.12, 2.8, b.depth + 0.12),
         lobbyMat
       );
       lobbyGlass.position.y = 2.0;
       bGroup.add(lobbyGlass);
+      if (isCreamModern) {
+        const overhang = new THREE.Mesh(
+          new THREE.BoxGeometry(b.width + 1.4, 0.55, b.depth + 1.4),
+          creamTrimMat
+        );
+        overhang.position.y = podiumH + 0.1;
+        overhang.castShadow = true;
+        bGroup.add(overhang);
+      }
 
       // Multi-Tiered Stepped Architectural Massing (or Sculpted Cylindrical Mid-Rise)
       const remainingH = b.height - podiumH;
@@ -753,6 +938,178 @@ export function buildSolarisCity(maxAnisotropy: number): CityBuildResult {
         sR.position.x = wx + 0.78;
         bGroup.add(pane, sL, sR);
       }
+    } else if (b.kind === 'sage_colonial') {
+      const sageSidingMat = new THREE.MeshStandardMaterial({
+        map: sageClapboard.map,
+        normalMap: sageClapboard.normalMap,
+        normalScale: new THREE.Vector2(0.75, 0.75),
+        roughness: 0.76,
+      });
+      const slateRoofMat = new THREE.MeshStandardMaterial({
+        map: roofShingle.map,
+        normalMap: roofShingle.normalMap,
+        normalScale: new THREE.Vector2(0.8, 0.8),
+        color: '#2b303a',
+        roughness: 0.84,
+      });
+      const whiteTrimMat = new THREE.MeshStandardMaterial({ color: '#f4f4f5', roughness: 0.55 });
+      const plinthMat = new THREE.MeshStandardMaterial({ color: '#9ca3af', roughness: 0.88 });
+      const sashGlassMat = new THREE.MeshPhysicalMaterial({
+        color: '#162336',
+        roughness: 0.08,
+        clearcoat: 1.0,
+        metalness: 0.15,
+      });
+      const doorWoodMat = new THREE.MeshStandardMaterial({ color: '#422c20', roughness: 0.62 });
+
+      const hw = b.width; // 16
+      const hd = b.depth; // 12
+      const wallH = 6.7;
+      const plinthH = 0.55;
+
+      // Foundation plinth
+      const plinth = new THREE.Mesh(new THREE.BoxGeometry(hw + 0.45, plinthH, hd + 0.45), plinthMat);
+      plinth.position.y = plinthH * 0.5;
+      plinth.receiveShadow = true;
+
+      // Main 2-story sage clapboard volume
+      const body = new THREE.Mesh(new THREE.BoxGeometry(hw, wallH, hd), sageSidingMat);
+      body.position.y = plinthH + wallH * 0.5;
+      body.castShadow = true;
+      body.receiveShadow = true;
+      bGroup.add(plinth, body);
+
+      // Crisp white vertical corner trim boards & downspouts
+      for (const cx of [-hw * 0.5, hw * 0.5]) {
+        for (const cz of [-hd * 0.5, hd * 0.5]) {
+          const cornerTrim = new THREE.Mesh(
+            new THREE.BoxGeometry(0.32, wallH + 0.1, 0.32),
+            whiteTrimMat
+          );
+          cornerTrim.position.set(cx, plinthH + wallH * 0.5, cz);
+          bGroup.add(cornerTrim);
+        }
+        const downspout = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.08, 0.08, wallH + 0.2, 6),
+          whiteTrimMat
+        );
+        downspout.position.set(cx * 0.96, plinthH + wallH * 0.5, hd * 0.5 + 0.16);
+        bGroup.add(downspout);
+      }
+
+      // Steep dark slate gable roof + gable end clapboard infill
+      const gablePeak = 3.85;
+      const roofShape = new THREE.Shape();
+      roofShape.moveTo(0, gablePeak);
+      roofShape.lineTo(-hd * 0.54, -0.35);
+      roofShape.lineTo(-hd * 0.54, 0.12);
+      roofShape.lineTo(0, gablePeak + 0.48);
+      roofShape.lineTo(hd * 0.54, 0.12);
+      roofShape.lineTo(hd * 0.54, -0.35);
+      roofShape.closePath();
+      const roofGeo = new THREE.ExtrudeGeometry(roofShape, { depth: hw + 0.9, bevelEnabled: false });
+      roofGeo.translate(0, 0, -(hw + 0.9) * 0.5);
+      roofGeo.rotateY(Math.PI / 2);
+      const roofMesh = new THREE.Mesh(roofGeo, slateRoofMat);
+      roofMesh.position.y = plinthH + wallH;
+      roofMesh.castShadow = true;
+
+      const gableWallShape = new THREE.Shape();
+      gableWallShape.moveTo(-hd * 0.5, 0);
+      gableWallShape.lineTo(hd * 0.5, 0);
+      gableWallShape.lineTo(0, gablePeak);
+      gableWallShape.closePath();
+      const gableWallGeo = new THREE.ExtrudeGeometry(gableWallShape, { depth: hw - 0.08, bevelEnabled: false });
+      gableWallGeo.translate(0, 0, -(hw - 0.08) * 0.5);
+      gableWallGeo.rotateY(Math.PI / 2);
+      const gableWall = new THREE.Mesh(gableWallGeo, sageSidingMat);
+      gableWall.position.y = plinthH + wallH;
+      gableWall.castShadow = true;
+      bGroup.add(roofMesh, gableWall);
+
+      // White horizontal eaves gutters on front and back
+      for (const gz of [-hd * 0.5 - 0.42, hd * 0.5 + 0.42]) {
+        const gutter = new THREE.Mesh(new THREE.BoxGeometry(hw + 1.0, 0.2, 0.22), whiteTrimMat);
+        gutter.position.set(0, plinthH + wallH - 0.12, gz);
+        bGroup.add(gutter);
+      }
+
+      // Helper for framed multi-pane white-trim sash window
+      const addSashWin = (wx: number, wy: number, wz: number, rotY = 0, w = 1.25, h = 1.7) => {
+        const winG = new THREE.Group();
+        winG.position.set(wx, wy, wz);
+        winG.rotation.y = rotY;
+        const frame = new THREE.Mesh(new THREE.BoxGeometry(w + 0.24, h + 0.24, 0.14), whiteTrimMat);
+        const glass = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.16), sashGlassMat);
+        const barH = new THREE.Mesh(new THREE.BoxGeometry(w + 0.04, 0.08, 0.18), whiteTrimMat);
+        const barV = new THREE.Mesh(new THREE.BoxGeometry(0.06, h + 0.04, 0.18), whiteTrimMat);
+        const sill = new THREE.Mesh(new THREE.BoxGeometry(w + 0.34, 0.12, 0.24), whiteTrimMat);
+        sill.position.y = -h * 0.5 - 0.08;
+        winG.add(frame, glass, barH, barV, sill);
+        bGroup.add(winG);
+      };
+
+      // Twin 3rd-story attic gable dormers on front roof slope
+      for (const dx of [-3.9, 3.9]) {
+        const dormerBody = new THREE.Mesh(new THREE.BoxGeometry(2.5, 2.0, 2.6), sageSidingMat);
+        dormerBody.position.set(dx, plinthH + wallH + 1.15, hd * 0.26);
+        dormerBody.castShadow = true;
+        const dShape = new THREE.Shape();
+        dShape.moveTo(-1.45, 0);
+        dShape.lineTo(1.45, 0);
+        dShape.lineTo(0, 1.05);
+        dShape.closePath();
+        const dRoofGeo = new THREE.ExtrudeGeometry(dShape, { depth: 3.0, bevelEnabled: false });
+        dRoofGeo.translate(0, 0, -1.5);
+        const dRoof = new THREE.Mesh(dRoofGeo, slateRoofMat);
+        dRoof.position.set(dx, plinthH + wallH + 2.15, hd * 0.26);
+        dRoof.castShadow = true;
+        bGroup.add(dormerBody, dRoof);
+        addSashWin(dx, plinthH + wallH + 1.18, hd * 0.26 + 1.32, 0, 1.1, 1.35);
+      }
+
+      // Front & Back 1st/2nd-floor windows + entryway stoop
+      for (const wx of [-5.2, -2.5, 2.5, 5.2]) {
+        addSashWin(wx, plinthH + 1.9, hd * 0.5 + 0.05);
+        addSashWin(wx, plinthH + 4.85, hd * 0.5 + 0.05);
+        addSashWin(wx, plinthH + 1.9, -hd * 0.5 - 0.05, Math.PI);
+        addSashWin(wx, plinthH + 4.85, -hd * 0.5 - 0.05, Math.PI);
+      }
+      addSashWin(0, plinthH + 4.85, hd * 0.5 + 0.05);
+      addSashWin(0, plinthH + 4.85, -hd * 0.5 - 0.05, Math.PI);
+
+      // Gable side & lower side windows
+      for (const sx of [-hw * 0.5 - 0.05, hw * 0.5 + 0.05]) {
+        const rot = sx > 0 ? Math.PI / 2 : -Math.PI / 2;
+        addSashWin(sx, plinthH + 1.9, -2.6, rot);
+        addSashWin(sx, plinthH + 1.9, 2.6, rot);
+        addSashWin(sx, plinthH + 4.85, -2.6, rot);
+        addSashWin(sx, plinthH + 4.85, 2.6, rot);
+        addSashWin(sx, plinthH + wallH + 1.5, 0, rot, 1.05, 1.35);
+      }
+
+      // Front door surround & stone steps
+      const doorFrame = new THREE.Mesh(new THREE.BoxGeometry(1.8, 2.65, 0.2), whiteTrimMat);
+      doorFrame.position.set(0, plinthH + 1.35, hd * 0.5 + 0.06);
+      const doorLeaf = new THREE.Mesh(new THREE.BoxGeometry(1.28, 2.38, 0.24), doorWoodMat);
+      doorLeaf.position.set(0, plinthH + 1.22, hd * 0.5 + 0.08);
+      const stoop = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.45, 1.4), plinthMat);
+      stoop.position.set(0, 0.225, hd * 0.5 + 0.72);
+      const porchHood = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.25, 1.2), slateRoofMat);
+      porchHood.position.set(0, plinthH + 2.85, hd * 0.5 + 0.55);
+      porchHood.rotation.x = 0.24;
+      bGroup.add(doorFrame, doorLeaf, stoop, porchHood);
+
+      disposables.push(
+        sageSidingMat,
+        slateRoofMat,
+        whiteTrimMat,
+        plinthMat,
+        sashGlassMat,
+        doorWoodMat,
+        roofGeo,
+        gableWallGeo
+      );
     } else if (b.kind === 'barn') {
       const barnWallMat = new THREE.MeshStandardMaterial({
         map: barnSiding.map,
@@ -883,16 +1240,141 @@ export function buildSolarisCity(maxAnisotropy: number): CityBuildResult {
       radar.position.y = b.height + 1.0;
       bGroup.add(shaft, cab, cap, radar);
     } else if (b.kind === 'hangar') {
-      const hMat = new THREE.MeshStandardMaterial({ color: '#475569', roughness: 0.62, metalness: 0.35 });
-      const arch = new THREE.Mesh(
-        new THREE.CylinderGeometry(b.width * 0.5, b.width * 0.5, b.depth, 16, 1, false, 0, Math.PI),
-        hMat
+      // Quonset Corrugated Metal Hangar with Royal Blue Arch Fascia Ribs, Open Bay & Rolled Curtain
+      const radius = b.width * 0.5;
+      const hd = b.depth * 0.5;
+      const hangarShellMat = new THREE.MeshStandardMaterial({
+        map: corrugatedMetal.map,
+        normalMap: corrugatedMetal.normalMap,
+        normalScale: new THREE.Vector2(0.85, 0.85),
+        color: '#9ca3af',
+        roughness: 0.52,
+        metalness: 0.48,
+      });
+      const hangarBlueTrimMat = new THREE.MeshStandardMaterial({
+        color: '#1d4ed8',
+        roughness: 0.42,
+        metalness: 0.35,
+      });
+      const hangarInteriorMat = new THREE.MeshStandardMaterial({
+        color: '#18181b',
+        roughness: 0.85,
+        side: THREE.BackSide,
+      });
+      const curtainMat = new THREE.MeshStandardMaterial({
+        color: '#c2b29b',
+        roughness: 0.82,
+      });
+      const louverMat = new THREE.MeshStandardMaterial({
+        color: '#334155',
+        roughness: 0.45,
+        metalness: 0.4,
+      });
+
+      const outerArch = new THREE.Mesh(
+        new THREE.CylinderGeometry(radius, radius, b.depth, 24, 1, true, 0, Math.PI),
+        hangarShellMat
       );
-      arch.rotation.z = Math.PI / 2;
-      arch.rotation.y = Math.PI / 2;
-      arch.position.y = 0;
-      arch.castShadow = true;
-      bGroup.add(arch);
+      outerArch.rotation.z = Math.PI / 2;
+      outerArch.rotation.y = Math.PI / 2;
+      outerArch.castShadow = true;
+      outerArch.receiveShadow = true;
+
+      const innerArch = new THREE.Mesh(
+        new THREE.CylinderGeometry(radius - 0.15, radius - 0.15, b.depth - 0.2, 20, 1, true, 0, Math.PI),
+        hangarInteriorMat
+      );
+      innerArch.rotation.z = Math.PI / 2;
+      innerArch.rotation.y = Math.PI / 2;
+
+      const hangarFloor = new THREE.Mesh(
+        new THREE.PlaneGeometry(b.width - 0.6, b.depth - 0.6),
+        new THREE.MeshStandardMaterial({ color: '#334155', roughness: 0.78 })
+      );
+      hangarFloor.rotation.x = -Math.PI / 2;
+      hangarFloor.position.y = 0.06;
+      hangarFloor.receiveShadow = true;
+
+      // Semi-circular front/rear gable wall with central open hangar bay
+      const doorW = Math.min(9.6, b.width * 0.42);
+      const doorH = Math.min(6.4, radius * 0.56);
+      const gableShape = new THREE.Shape();
+      gableShape.absarc(0, 0, radius - 0.08, 0, Math.PI, false);
+      gableShape.lineTo(-doorW * 0.5, 0);
+      gableShape.lineTo(-doorW * 0.5, doorH);
+      gableShape.lineTo(doorW * 0.5, doorH);
+      gableShape.lineTo(doorW * 0.5, 0);
+      gableShape.lineTo(radius - 0.08, 0);
+
+      const frontWallGeo = new THREE.ExtrudeGeometry(gableShape, {
+        depth: 0.32,
+        bevelEnabled: false,
+      });
+      const frontWall = new THREE.Mesh(frontWallGeo, hangarShellMat);
+      frontWall.position.set(0, 0, hd - 0.34);
+      frontWall.castShadow = true;
+      const backWall = frontWall.clone();
+      backWall.position.set(0, 0, -hd + 0.02);
+
+      // Royal blue outer arch fascia ribs (front + rear)
+      const frontRim = new THREE.Mesh(
+        new THREE.TorusGeometry(radius, 0.34, 8, 24, Math.PI),
+        hangarBlueTrimMat
+      );
+      frontRim.position.set(0, 0, hd);
+      const rearRim = frontRim.clone();
+      rearRim.position.set(0, 0, -hd);
+
+      // Blue doorway jamb trim & rolled-up canvas bay curtain header
+      const curtainRoll = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.42, 0.42, doorW + 0.3, 12),
+        curtainMat
+      );
+      curtainRoll.rotation.z = Math.PI / 2;
+      curtainRoll.position.set(0, doorH - 0.2, hd + 0.14);
+
+      const headerBar = new THREE.Mesh(
+        new THREE.BoxGeometry(doorW + 0.7, 0.32, 0.46),
+        hangarBlueTrimMat
+      );
+      headerBar.position.set(0, doorH + 0.18, hd - 0.14);
+
+      bGroup.add(outerArch, innerArch, hangarFloor, frontWall, backWall, frontRim, rearRim, curtainRoll, headerBar);
+
+      for (const side of [-1, 1]) {
+        const post = new THREE.Mesh(
+          new THREE.BoxGeometry(0.32, doorH, 0.48),
+          hangarBlueTrimMat
+        );
+        post.position.set(side * (doorW * 0.5 + 0.16), doorH * 0.5, hd - 0.14);
+        const winFrame = new THREE.Mesh(
+          new THREE.BoxGeometry(2.4, 1.5, 0.22),
+          hangarBlueTrimMat
+        );
+        winFrame.position.set(side * (doorW * 0.5 + 3.2), 2.8, hd + 0.02);
+        const winShutter = new THREE.Mesh(
+          new THREE.BoxGeometry(2.05, 1.18, 0.25),
+          louverMat
+        );
+        winShutter.position.set(side * (doorW * 0.5 + 3.2), 2.8, hd + 0.03);
+        bGroup.add(post, winFrame, winShutter);
+      }
+
+      // Interior hangar overhead bay light strip
+      const bayLight = new THREE.Mesh(
+        new THREE.BoxGeometry(3.2, 0.18, b.depth * 0.55),
+        new THREE.MeshBasicMaterial({ color: '#fef3c7' })
+      );
+      bayLight.position.set(0, radius * 0.78, 0);
+      bGroup.add(bayLight);
+      disposables.push(
+        hangarShellMat,
+        hangarBlueTrimMat,
+        hangarInteriorMat,
+        curtainMat,
+        louverMat,
+        frontWallGeo
+      );
     } else if (b.kind === 'diner' && b.enterable) {
       // Enterable Sunset Diner with Checkered Interior Floor, Booths & Service Counter!
       const wallMat = new THREE.MeshStandardMaterial({ color: '#991b1b', roughness: 0.65 });
@@ -951,9 +1433,205 @@ export function buildSolarisCity(maxAnisotropy: number): CityBuildResult {
       );
       sign.position.set(hw + 0.2, b.height + 0.95, 0);
       bGroup.add(sign);
+    } else if (b.kind === 'residential') {
+      // Realistic 3-Story Terracotta Brick Apartment Building with Plinth, Cornice, Front Steps, Chimney & HVAC
+      const brickWallMat = new THREE.MeshStandardMaterial({
+        map: brickTex.map,
+        normalMap: brickTex.normalMap,
+        normalScale: new THREE.Vector2(0.7, 0.7),
+        roughness: 0.84,
+      });
+      const stoneMat = new THREE.MeshStandardMaterial({ color: '#9ca3af', roughness: 0.82 });
+      const tarRoofMat = new THREE.MeshStandardMaterial({ color: '#4b5563', roughness: 0.92 });
+      const woodDoorMat = new THREE.MeshStandardMaterial({ color: '#78350f', roughness: 0.68 });
+      const metalHvacMat = new THREE.MeshStandardMaterial({ color: '#cbd5e1', roughness: 0.42, metalness: 0.45 });
+      disposables.push(brickWallMat, stoneMat, tarRoofMat, woodDoorMat, metalHvacMat);
+
+      const plinth = new THREE.Mesh(new THREE.BoxGeometry(b.width + 0.5, 0.9, b.depth + 0.5), stoneMat);
+      plinth.position.y = 0.45;
+      plinth.receiveShadow = true;
+      bGroup.add(plinth);
+
+      const body = new THREE.Mesh(new THREE.BoxGeometry(b.width, b.height, b.depth), brickWallMat);
+      body.position.y = b.height * 0.5;
+      body.castShadow = true;
+      body.receiveShadow = true;
+      bGroup.add(body);
+
+      const parapet = new THREE.Mesh(new THREE.BoxGeometry(b.width + 1.0, 0.95, b.depth + 1.0), stoneMat);
+      parapet.position.y = b.height + 0.35;
+      parapet.castShadow = true;
+      const tarRoof = new THREE.Mesh(new THREE.BoxGeometry(b.width - 0.6, 0.25, b.depth - 0.6), tarRoofMat);
+      tarRoof.position.y = b.height + 0.72;
+      bGroup.add(parapet, tarRoof);
+
+      // Rooftop Brick Chimney + Metallic HVAC Unit with Exhaust Elbow
+      const chimney = new THREE.Mesh(new THREE.BoxGeometry(2.2, 2.4, 1.8), brickWallMat);
+      chimney.position.set(-b.width * 0.22, b.height + 1.65, -b.depth * 0.16);
+      const chimneyCap = new THREE.Mesh(new THREE.BoxGeometry(2.5, 0.28, 2.1), stoneMat);
+      chimneyCap.position.set(-b.width * 0.22, b.height + 2.9, -b.depth * 0.16);
+      const roofHvac = new THREE.Mesh(new THREE.BoxGeometry(2.4, 1.35, 2.0), metalHvacMat);
+      roofHvac.position.set(b.width * 0.2, b.height + 1.4, b.depth * 0.14);
+      const roofDuct = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 1.4, 10), metalHvacMat);
+      roofDuct.rotation.z = Math.PI / 2;
+      roofDuct.position.set(b.width * 0.2 - 1.4, b.height + 1.5, b.depth * 0.14);
+      bGroup.add(chimney, chimneyCap, roofHvac, roofDuct);
+
+      // Protruding Stone Steps + Arched Wooden Apartment Entrance on South/Front Facade
+      const doorFrame = new THREE.Mesh(new THREE.BoxGeometry(2.8, 3.8, 0.35), stoneMat);
+      doorFrame.position.set(0, 2.1, b.depth * 0.5 + 0.12);
+      const doorLeaf = new THREE.Mesh(new THREE.BoxGeometry(2.1, 3.3, 0.42), woodDoorMat);
+      doorLeaf.position.set(0, 1.9, b.depth * 0.5 + 0.16);
+      bGroup.add(doorFrame, doorLeaf);
+      for (let st = 0; st < 4; st++) {
+        const step = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.26, 0.65), stoneMat);
+        step.position.set(0, 0.13 + (3 - st) * 0.22, b.depth * 0.5 + 0.45 + st * 0.52);
+        bGroup.add(step);
+      }
+    } else if (b.kind === 'gothic_church') {
+      const stoneWallMat = new THREE.MeshStandardMaterial({
+        map: gothicStone.map,
+        normalMap: gothicStone.normalMap,
+        normalScale: new THREE.Vector2(0.85, 0.85),
+        roughness: 0.86,
+      });
+      const gothicSlateMat = new THREE.MeshStandardMaterial({
+        map: roofShingle.map,
+        normalMap: roofShingle.normalMap,
+        normalScale: new THREE.Vector2(0.75, 0.75),
+        color: '#3f4552',
+        roughness: 0.82,
+      });
+      const stoneTrimMat = new THREE.MeshStandardMaterial({ color: '#c4bfb6', roughness: 0.8 });
+      const gothicGlassMat = new THREE.MeshPhysicalMaterial({
+        color: '#1b2838',
+        roughness: 0.12,
+        clearcoat: 0.85,
+      });
+      const gothicDoorMat = new THREE.MeshStandardMaterial({ color: '#271a14', roughness: 0.72 });
+
+      const hw = b.width; // 24
+      const hd = b.depth; // 18
+
+      // Stone plinth foundation
+      const plinth = new THREE.Mesh(new THREE.BoxGeometry(hw + 0.8, 0.9, hd + 0.8), stoneTrimMat);
+      plinth.position.y = 0.45;
+      plinth.receiveShadow = true;
+      bGroup.add(plinth);
+
+      // Left Tall Square Bell Tower + Steep Octagonal Spire
+      const towerX = -hw * 0.5 + 3.2;
+      const towerH = 18.6;
+      const towerBody = new THREE.Mesh(new THREE.BoxGeometry(5.6, towerH, 5.8), stoneWallMat);
+      towerBody.position.set(towerX, towerH * 0.5, 0.8);
+      towerBody.castShadow = true;
+      towerBody.receiveShadow = true;
+      bGroup.add(towerBody);
+
+      const towerCornice = new THREE.Mesh(new THREE.BoxGeometry(6.0, 0.6, 6.2), stoneTrimMat);
+      towerCornice.position.set(towerX, towerH + 0.1, 0.8);
+      const spire = new THREE.Mesh(new THREE.ConeGeometry(3.55, 14.5, 8), gothicSlateMat);
+      spire.position.set(towerX, towerH + 7.5, 0.8);
+      spire.castShadow = true;
+      bGroup.add(towerCornice, spire);
+
+      // Tower Belfry Louvers & Arched Lancet Windows
+      for (const wy of [7.5, 15.2]) {
+        const winFrame = new THREE.Mesh(new THREE.BoxGeometry(2.3, 3.2, 0.28), stoneTrimMat);
+        winFrame.position.set(towerX, wy, 3.75);
+        const winGlass = new THREE.Mesh(new THREE.BoxGeometry(1.75, 2.7, 0.32), gothicGlassMat);
+        winGlass.position.set(towerX, wy, 3.77);
+        bGroup.add(winFrame, winGlass);
+      }
+
+      // Main Nave Body (y up to 9.2m) + Steep Pitched Slate Roof (9.2m -> 14.4m peak)
+      const naveWallH = 9.2;
+      const naveBody = new THREE.Mesh(new THREE.BoxGeometry(hw - 3.6, naveWallH, hd - 2.0), stoneWallMat);
+      naveBody.position.set(1.8, naveWallH * 0.5, -0.5);
+      naveBody.castShadow = true;
+      naveBody.receiveShadow = true;
+      bGroup.add(naveBody);
+
+      const naveRoofShape = new THREE.Shape();
+      naveRoofShape.moveTo(-(hd - 1.2) * 0.5, -0.2);
+      naveRoofShape.lineTo((hd - 1.2) * 0.5, -0.2);
+      naveRoofShape.lineTo(0, 5.2);
+      naveRoofShape.closePath();
+      const naveRoofGeo = new THREE.ExtrudeGeometry(naveRoofShape, { depth: hw - 3.0, bevelEnabled: false });
+      naveRoofGeo.translate(0, 0, -(hw - 3.0) * 0.5);
+      naveRoofGeo.rotateY(Math.PI / 2);
+      const naveRoof = new THREE.Mesh(naveRoofGeo, gothicSlateMat);
+      naveRoof.position.set(1.8, naveWallH, -0.5);
+      naveRoof.castShadow = true;
+      naveRoof.receiveShadow = true;
+      bGroup.add(naveRoof);
+
+      // South Transept Gable (Left-Center) + Ornate Tracery Window + Corner Turret Spire
+      const transeptBody = new THREE.Mesh(new THREE.BoxGeometry(6.8, 10.6, 5.0), stoneWallMat);
+      transeptBody.position.set(-2.4, 5.3, 4.4);
+      transeptBody.castShadow = true;
+      const transGable = new THREE.Shape();
+      transGable.moveTo(-3.6, 0);
+      transGable.lineTo(3.6, 0);
+      transGable.lineTo(0, 4.4);
+      transGable.closePath();
+      const transGableGeo = new THREE.ExtrudeGeometry(transGable, { depth: 5.2, bevelEnabled: false });
+      transGableGeo.translate(0, 0, -2.6);
+      const transRoof = new THREE.Mesh(transGableGeo, gothicSlateMat);
+      transRoof.position.set(-2.4, 10.6, 4.4);
+      bGroup.add(transeptBody, transRoof);
+
+      const bigWinFrame = new THREE.Mesh(new THREE.BoxGeometry(3.4, 5.2, 0.28), stoneTrimMat);
+      bigWinFrame.position.set(-2.4, 6.2, 6.95);
+      const bigWinGlass = new THREE.Mesh(new THREE.BoxGeometry(2.8, 4.6, 0.34), gothicGlassMat);
+      bigWinGlass.position.set(-2.4, 6.2, 6.98);
+      const roseOculus = new THREE.Mesh(new THREE.CylinderGeometry(0.65, 0.65, 0.34, 12), stoneTrimMat);
+      roseOculus.rotation.x = Math.PI / 2;
+      roseOculus.position.set(-2.4, 12.1, 6.98);
+      bGroup.add(bigWinFrame, bigWinGlass, roseOculus);
+
+      // Corner Turret Pinnacle Spire
+      const turretBase = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 0.95, 15.2, 8), stoneTrimMat);
+      turretBase.position.set(1.1, 7.6, 6.8);
+      const turretSpire = new THREE.Mesh(new THREE.ConeGeometry(0.95, 5.4, 8), gothicSlateMat);
+      turretSpire.position.set(1.1, 17.9, 6.8);
+      bGroup.add(turretBase, turretSpire);
+
+      // Side Nave Arcade with 4 Arched Double Wood Doors & Clerestory Windows
+      const arcadeXs = [3.0, 5.8, 8.6, 11.4];
+      for (const ax of arcadeXs) {
+        const doorRecess = new THREE.Mesh(new THREE.BoxGeometry(2.1, 3.6, 0.36), stoneTrimMat);
+        doorRecess.position.set(ax, 2.2, 7.65);
+        const doorWood = new THREE.Mesh(new THREE.BoxGeometry(1.75, 3.2, 0.42), gothicDoorMat);
+        doorWood.position.set(ax, 2.0, 7.68);
+        const clerestoryFrame = new THREE.Mesh(new THREE.BoxGeometry(1.5, 2.1, 0.25), stoneTrimMat);
+        clerestoryFrame.position.set(ax, 6.8, 7.55);
+        const clerestoryGlass = new THREE.Mesh(new THREE.BoxGeometry(1.1, 1.7, 0.3), gothicGlassMat);
+        clerestoryGlass.position.set(ax, 6.8, 7.58);
+        bGroup.add(doorRecess, doorWood, clerestoryFrame, clerestoryGlass);
+      }
+      // Buttress Piers with Pinnacles along Arcade
+      for (const bx of [1.6, 4.4, 7.2, 10.0, 12.7]) {
+        const buttress = new THREE.Mesh(new THREE.BoxGeometry(0.65, 8.6, 1.0), stoneTrimMat);
+        buttress.position.set(bx, 4.3, 7.85);
+        const cap = new THREE.Mesh(new THREE.ConeGeometry(0.42, 1.6, 4), stoneTrimMat);
+        cap.rotation.y = Math.PI / 4;
+        cap.position.set(bx, 9.4, 7.85);
+        bGroup.add(buttress, cap);
+      }
+
+      disposables.push(
+        stoneWallMat,
+        gothicSlateMat,
+        stoneTrimMat,
+        gothicGlassMat,
+        gothicDoorMat,
+        naveRoofGeo,
+        transGableGeo
+      );
     } else {
       const mat = new THREE.MeshStandardMaterial({
-        map: b.kind === 'residential' ? resTex : undefined,
+        map: b.kind === 'mall' ? undefined : resTex,
         color: b.color ?? '#64748b',
         roughness: b.kind === 'mall' ? 0.4 : 0.76,
         metalness: b.kind === 'mall' ? 0.28 : 0.08,
@@ -968,7 +1646,7 @@ export function buildSolarisCity(maxAnisotropy: number): CityBuildResult {
       roofTrim.position.y = b.height + 0.25;
       bGroup.add(roofTrim);
 
-      if (b.kind === 'residential' || b.kind === 'mall' || b.kind === 'warehouse') {
+      if (b.kind === 'mall' || b.kind === 'warehouse') {
         const roofHvac = new THREE.Mesh(new THREE.BoxGeometry(2.6, 1.3, 2.2), trimMat);
         roofHvac.position.set(b.width * 0.22, b.height + 1.2, -b.depth * 0.18);
         const roofTank = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.1, 2.2, 10), roofMat);
@@ -1054,78 +1732,183 @@ export function buildSolarisCity(maxAnisotropy: number): CityBuildResult {
   palmFronds.computeBoundingSphere();
   cityGroup.add(palmTrunks, palmFronds);
 
-  // Park Oak Trees
+  // Park, Boulevard & Suburban Realistic Leafy Deciduous Trees
   const oakPositions: Array<[number, number]> = [
-    [98, 18], [142, 18], [98, 58], [142, 58], [105, 38], [135, 38],
+    // Emerald Park
+    [98, 18], [142, 18], [98, 60], [142, 60], [102, 39], [138, 39],
+    // Crestview Sage Manor Lawn (-40, -120)
+    [-60, -104], [-20, -104], [-60, -138], [-20, -138],
+    // Willow Sage Residence Lawn (-40, -196)
+    [-58, -188], [-22, -188],
+    // Oakridge Colonial Lawn (40, -120)
+    [19, -104], [61, -104], [19, -140], [61, -140],
+    // Emerald Sage House Lawn (120, -40)
+    [98, -22], [142, -22], [98, -58], [142, -58],
+    // Solaris Homestead Barn Lawn (-122, -122)
+    [-100, -100], [-142, -140],
   ];
   const oakTrunks = new THREE.InstancedMesh(
-    new THREE.CylinderGeometry(0.3, 0.45, 3.6, 8),
+    new THREE.CylinderGeometry(0.24, 0.44, 4.0, 8),
     trunkMat,
     oakPositions.length
   );
+  oakTrunks.castShadow = true;
+
+  const CLUSTERS_PER_TREE = 7;
+  const oakCanopyGeo = new THREE.IcosahedronGeometry(1.65, 1);
+  const oakCanopyMat = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.82 });
   const oakCanopies = new THREE.InstancedMesh(
-    new THREE.DodecahedronGeometry(2.5, 1),
-    new THREE.MeshStandardMaterial({ color: '#15803d', roughness: 0.82 }),
-    oakPositions.length
+    oakCanopyGeo,
+    oakCanopyMat,
+    oakPositions.length * CLUSTERS_PER_TREE
   );
+  oakCanopies.castShadow = true;
+  oakCanopies.receiveShadow = true;
+
+  const CARDS_PER_TREE = 8;
+  const leafCardGeo = new THREE.PlaneGeometry(3.2, 3.2);
+  const leafCardMat = new THREE.MeshStandardMaterial({
+    map: leafCanopyTex,
+    alphaTest: 0.42,
+    side: THREE.DoubleSide,
+    roughness: 0.78,
+  });
+  const oakLeafCards = new THREE.InstancedMesh(
+    leafCardGeo,
+    leafCardMat,
+    oakPositions.length * CARDS_PER_TREE
+  );
+  oakLeafCards.castShadow = false;
+
+  const clusterOffsets: Array<[number, number, number, number]> = [
+    [0, 5.2, 0, 1.15],
+    [-1.25, 4.4, 0.65, 0.92],
+    [1.28, 4.35, 0.55, 0.9],
+    [0.2, 4.5, -1.25, 0.95],
+    [-0.95, 5.55, -0.75, 0.84],
+    [0.95, 5.45, 0.85, 0.85],
+    [0.05, 6.15, 0.1, 0.82],
+  ];
+
+  let clusterIdx = 0;
+  let cardIdx = 0;
   oakPositions.forEach(([ox, oz], idx) => {
-    dummy.position.set(ox, 1.8, oz);
-    dummy.rotation.set(0, 0, 0);
-    dummy.scale.setScalar(1);
+    const tScale = 0.88 + (idx % 4) * 0.1;
+    const tYaw = idx * 1.17;
+    const cosY = Math.cos(tYaw);
+    const sinY = Math.sin(tYaw);
+
+    dummy.position.set(ox, 2.0 * tScale, oz);
+    dummy.rotation.set(0, tYaw, 0);
+    dummy.scale.setScalar(tScale);
     dummy.updateMatrix();
     oakTrunks.setMatrixAt(idx, dummy.matrix);
 
-    dummy.position.set(ox, 4.4, oz);
-    dummy.scale.setScalar(0.92 + (idx % 3) * 0.12);
-    dummy.updateMatrix();
-    oakCanopies.setMatrixAt(idx, dummy.matrix);
+    for (let c = 0; c < CLUSTERS_PER_TREE; c++) {
+      const [lx, ly, lz, cs] = clusterOffsets[c];
+      const wx = ox + (lx * cosY - lz * sinY) * tScale;
+      const wz = oz + (lx * sinY + lz * cosY) * tScale;
+      dummy.position.set(wx, ly * tScale, wz);
+      dummy.rotation.set(c * 0.4, tYaw + c * 0.9, c * 0.25);
+      dummy.scale.setScalar(cs * tScale);
+      dummy.updateMatrix();
+      oakCanopies.setMatrixAt(clusterIdx, dummy.matrix);
+      colorVar.setHSL(0.28 + ((idx + c) % 4) * 0.015, 0.52, 0.24 + ((idx * 3 + c) % 4) * 0.035);
+      oakCanopies.setColorAt(clusterIdx, colorVar);
+      clusterIdx++;
+    }
+
+    for (let k = 0; k < CARDS_PER_TREE; k++) {
+      const ang = tYaw + (k * Math.PI * 2) / CARDS_PER_TREE;
+      const rad = k < 4 ? 1.35 * tScale : 0.75 * tScale;
+      const ky = (k < 4 ? 4.6 : 5.65) * tScale;
+      dummy.position.set(ox + Math.cos(ang) * rad, ky, oz + Math.sin(ang) * rad);
+      dummy.rotation.set(0.35 + (k % 2) * 0.45, ang + 0.6, (k % 3) * 0.35);
+      dummy.scale.setScalar(tScale);
+      dummy.updateMatrix();
+      oakLeafCards.setMatrixAt(cardIdx, dummy.matrix);
+      colorVar.setHSL(0.27 + ((idx + k) % 3) * 0.016, 0.48, 0.82 + (k % 3) * 0.06);
+      oakLeafCards.setColorAt(cardIdx, colorVar);
+      cardIdx++;
+    }
   });
   oakTrunks.instanceMatrix.needsUpdate = true;
   oakCanopies.instanceMatrix.needsUpdate = true;
+  if (oakCanopies.instanceColor) oakCanopies.instanceColor.needsUpdate = true;
+  oakLeafCards.instanceMatrix.needsUpdate = true;
+  if (oakLeafCards.instanceColor) oakLeafCards.instanceColor.needsUpdate = true;
   oakTrunks.computeBoundingSphere();
   oakCanopies.computeBoundingSphere();
-  cityGroup.add(oakTrunks, oakCanopies);
+  oakLeafCards.computeBoundingSphere();
+  cityGroup.add(oakTrunks, oakCanopies, oakLeafCards);
+  disposables.push(oakCanopyGeo, oakCanopyMat, leafCardGeo, leafCardMat);
 
-  // 10b. Photorealistic Instanced 3D Grass Tufts, Fallen Autumn Leaves & Smooth River Boulders
+  // 10b. Photorealistic Instanced 3D Grass Meadows, Fallen Autumn Leaves & Smooth River Boulders
   const grassZones: Array<{ cx: number; cz: number; half: number; exclX?: number; exclZ?: number; exclR?: number }> = [
     { cx: 120, cz: 40, half: 26, exclX: 120, exclZ: 33, exclR: 13 }, // Emerald Park
     { cx: -120, cz: -120, half: 26, exclX: -122, exclZ: -122, exclR: 15 }, // Homestead Barn Lawn
-    { cx: -40, cz: -120, half: 26, exclX: -40, exclZ: -122, exclR: 13 }, // Colonial Lawn W
-    { cx: 40, cz: -120, half: 26, exclX: 40, exclZ: -122, exclR: 13 }, // Colonial Lawn E
-    { cx: 120, cz: -40, half: 26, exclX: 120, exclZ: -40, exclR: 13 }, // Emerald Estate Lawn
+    { cx: -40, cz: -120, half: 26, exclX: -40, exclZ: -122, exclR: 12 }, // Crestview Sage Lawn
+    { cx: -40, cz: -196, half: 18, exclX: -40, exclZ: -196, exclR: 11 }, // Willow Sage Lawn
+    { cx: 40, cz: -120, half: 26, exclX: 40, exclZ: -126, exclR: 15 }, // Oakridge Colonial Lawn
+    { cx: 120, cz: -40, half: 26, exclX: 120, exclZ: -40, exclR: 12 }, // Emerald Sage Lawn
   ];
 
-  const bladeGeo = new THREE.ConeGeometry(0.09, 0.36, 3);
-  bladeGeo.translate(0, 0.18, 0);
-  const bladeMat = new THREE.MeshStandardMaterial({ color: '#4d7c2b', roughness: 0.85 });
-  const TOTAL_GRASS = 1350;
-  const grassInst = new THREE.InstancedMesh(bladeGeo, bladeMat, TOTAL_GRASS);
+  // Multi-blade 3D crossed grass tuft BufferGeometry (3 angled tapered blades per tuft)
+  const tuftGeo = new THREE.BufferGeometry();
+  const tVerts: number[] = [];
+  const tNorms: number[] = [];
+  for (let bIdx = 0; bIdx < 3; bIdx++) {
+    const a = (bIdx * Math.PI * 2) / 3 + 0.25;
+    const ca = Math.cos(a);
+    const sa = Math.sin(a);
+    const w = 0.065;
+    const h = bIdx === 0 ? 0.44 : 0.36;
+    const lean = 0.12;
+    const p1x = -sa * w;
+    const p1z = ca * w;
+    const p2x = sa * w;
+    const p2z = -ca * w;
+    const tipX = ca * lean;
+    const tipZ = sa * lean;
+    tVerts.push(p1x, 0, p1z, p2x, 0, p2z, tipX, h, tipZ);
+    tNorms.push(ca * 0.5, 0.85, sa * 0.5, ca * 0.5, 0.85, sa * 0.5, ca * 0.5, 0.85, sa * 0.5);
+  }
+  tuftGeo.setAttribute('position', new THREE.Float32BufferAttribute(tVerts, 3));
+  tuftGeo.setAttribute('normal', new THREE.Float32BufferAttribute(tNorms, 3));
+
+  const bladeMat = new THREE.MeshStandardMaterial({
+    color: '#ffffff',
+    roughness: 0.82,
+    side: THREE.DoubleSide,
+  });
+  const TOTAL_GRASS = 2200;
+  const grassInst = new THREE.InstancedMesh(tuftGeo, bladeMat, TOTAL_GRASS);
 
   const leafGeo = new THREE.PlaneGeometry(0.18, 0.1);
   leafGeo.rotateX(-Math.PI / 2);
   const leafMat = new THREE.MeshStandardMaterial({ color: '#8f5d32', roughness: 0.9, side: THREE.DoubleSide });
-  const TOTAL_LEAVES = 220;
+  const TOTAL_LEAVES = 280;
   const leafInst = new THREE.InstancedMesh(leafGeo, leafMat, TOTAL_LEAVES);
 
   let gCursor = 0;
   let lCursor = 0;
-  for (let i = 0; i < TOTAL_GRASS + 400 && gCursor < TOTAL_GRASS; i++) {
+  for (let i = 0; i < TOTAL_GRASS + 700 && gCursor < TOTAL_GRASS; i++) {
     const zInfo = grassZones[i % grassZones.length];
-    const rx = zInfo.cx + (Math.sin(i * 19.7) * 0.92) * zInfo.half;
-    const rz = zInfo.cz + (Math.cos(i * 31.3) * 0.92) * zInfo.half;
+    const rx = zInfo.cx + (Math.sin(i * 19.7) * 0.94) * zInfo.half;
+    const rz = zInfo.cz + (Math.cos(i * 31.3) * 0.94) * zInfo.half;
     if (zInfo.exclR && Math.hypot(rx - (zInfo.exclX ?? 0), rz - (zInfo.exclZ ?? 0)) < zInfo.exclR) continue;
 
-    dummy.position.set(rx, 0.05, rz);
-    dummy.rotation.set((Math.sin(i * 7.1) * 0.22), (i * 1.1) % (Math.PI * 2), (Math.cos(i * 5.3) * 0.22));
-    const gs = 0.75 + ((i * 13) % 10) * 0.06;
+    dummy.position.set(rx, 0.04, rz);
+    dummy.rotation.set((Math.sin(i * 7.1) * 0.16), (i * 1.1) % (Math.PI * 2), (Math.cos(i * 5.3) * 0.16));
+    const gs = 0.82 + ((i * 13) % 10) * 0.068;
     dummy.scale.set(gs, gs * 1.15, gs);
     dummy.updateMatrix();
     grassInst.setMatrixAt(gCursor, dummy.matrix);
-    colorVar.setHSL(0.24 + ((i * 7) % 5) * 0.014, 0.48, 0.26 + ((i * 3) % 4) * 0.04);
+    colorVar.setHSL(0.25 + ((i * 7) % 5) * 0.014, 0.56, 0.28 + ((i * 3) % 4) * 0.042);
     grassInst.setColorAt(gCursor, colorVar);
     gCursor++;
 
-    if (lCursor < TOTAL_LEAVES && i % 6 === 0) {
+    if (lCursor < TOTAL_LEAVES && i % 9 === 0) {
       dummy.position.set(rx + 0.15, 0.06, rz - 0.1);
       dummy.rotation.set(0, (i * 2.3) % (Math.PI * 2), 0);
       dummy.scale.setScalar(0.8 + (i % 3) * 0.25);
@@ -1142,7 +1925,7 @@ export function buildSolarisCity(maxAnisotropy: number): CityBuildResult {
   grassInst.computeBoundingSphere();
   leafInst.computeBoundingSphere();
   cityGroup.add(grassInst, leafInst);
-  disposables.push(bladeGeo, bladeMat, leafGeo, leafMat);
+  disposables.push(tuftGeo, bladeMat, leafGeo, leafMat);
 
   // Smooth Pale River Boulders in Emerald Park & Suburban Gardens
   const boulderCoords: Array<[number, number, number]> = [
@@ -1335,16 +2118,28 @@ export function buildSolarisCity(maxAnisotropy: number): CityBuildResult {
   heliHBar.position.set(-198, 0.16, 4);
   cityGroup.add(airportApron, runwayMesh, helipadBase, heliH1, heliH2, heliHBar);
 
-  // Static Parked Airliner beside Hangar
-  const planeMat = new THREE.MeshPhysicalMaterial({ color: '#f8fafc', roughness: 0.25, clearcoat: 0.8 });
-  const planeFuselage = new THREE.Mesh(new THREE.CapsuleGeometry(1.4, 11, 8, 14), planeMat);
-  planeFuselage.rotation.x = Math.PI / 2;
-  planeFuselage.position.set(-222, 2.3, 62);
-  const planeWing = new THREE.Mesh(new THREE.BoxGeometry(14, 0.22, 2.6), planeMat);
-  planeWing.position.set(-222, 2.0, 62);
-  const planeTail = new THREE.Mesh(new THREE.BoxGeometry(0.24, 3.2, 2.2), trimMat);
-  planeTail.position.set(-222, 4.1, 56.5);
-  cityGroup.add(planeFuselage, planeWing, planeTail);
+  // Instanced Runway Edge Guidance Lights
+  const rwLightGeo = new THREE.CylinderGeometry(0.14, 0.18, 0.28, 8);
+  const rwLightMat = new THREE.MeshBasicMaterial({ color: '#38bdf8' });
+  const rwLightCount = 24;
+  const rwLights = new THREE.InstancedMesh(rwLightGeo, rwLightMat, rwLightCount);
+  for (let i = 0; i < 12; i++) {
+    const zPos = -60 + i * 15.5;
+    for (let s = 0; s < 2; s++) {
+      const xPos = -246 + (s === 0 ? -12.3 : 12.3);
+      dummy.position.set(xPos, 0.16, zPos);
+      dummy.rotation.set(0, 0, 0);
+      dummy.scale.setScalar(1);
+      dummy.updateMatrix();
+      rwLights.setMatrixAt(i * 2 + s, dummy.matrix);
+    }
+  }
+  rwLights.instanceMatrix.needsUpdate = true;
+  rwLights.computeBoundingSphere();
+  cityGroup.add(rwLights);
+  disposables.push(rwLightGeo, rwLightMat);
+
+
 
   // 15. REDWOOD HIGHLANDS FOREST (NW Quadrant x < -150, z < -95)
   const redwoodCoords: Array<[number, number]> = [];
@@ -1365,13 +2160,14 @@ export function buildSolarisCity(maxAnisotropy: number): CityBuildResult {
   );
   redwoodCoords.forEach(([px, pz], idx) => {
     const sc = 0.85 + (idx % 5) * 0.16;
-    dummy.position.set(px, 3.1 * sc, pz);
+    const hillY = getNorthernHillsElevation(px, pz);
+    dummy.position.set(px, hillY + 3.1 * sc, pz);
     dummy.rotation.set(0, idx * 0.7, 0);
     dummy.scale.setScalar(sc);
     dummy.updateMatrix();
     pineTrunkInst.setMatrixAt(idx, dummy.matrix);
 
-    dummy.position.set(px, 8.4 * sc, pz);
+    dummy.position.set(px, hillY + 8.4 * sc, pz);
     dummy.updateMatrix();
     pineCanopyInst.setMatrixAt(idx, dummy.matrix);
   });
@@ -1393,7 +2189,7 @@ export function buildSolarisCity(maxAnisotropy: number): CityBuildResult {
 
   const mesaMat = new THREE.MeshStandardMaterial({ color: '#9a4f34', roughness: 0.88 });
   const mesaCoords: Array<[number, number, number, number]> = [
-    [248, -140, 20, 18],
+    [286, -148, 17, 19],
     [258, -32, 24, 24],
     [244, 72, 18, 14],
     [262, 140, 22, 20],
@@ -1414,38 +2210,573 @@ export function buildSolarisCity(maxAnisotropy: number): CityBuildResult {
   desertPad.position.set(215, 0.09, -115);
   cityGroup.add(desertPad);
 
+  // 16b. FORT SOLARIS ARMY CAMP PERIMETER BOUNDARY & CHECKPOINT (x: 192..268, z: -156..-76)
+  const armyPadMat = new THREE.MeshStandardMaterial({ color: '#6b6556', roughness: 0.92 });
+  const armyCompoundFloor = new THREE.Mesh(new THREE.PlaneGeometry(76, 80), armyPadMat);
+  armyCompoundFloor.rotation.x = -Math.PI / 2;
+  armyCompoundFloor.position.set(230, 0.06, -116);
+  armyCompoundFloor.receiveShadow = true;
+
+  const armyAccessRoad = new THREE.Mesh(new THREE.PlaneGeometry(58, 13), armyPadMat);
+  armyAccessRoad.rotation.x = -Math.PI / 2;
+  armyAccessRoad.position.set(197, 0.065, -116);
+  armyAccessRoad.receiveShadow = true;
+  cityGroup.add(armyCompoundFloor, armyAccessRoad);
+
+  const wallPanelMat = new THREE.MeshStandardMaterial({ map: armyWallTex, roughness: 0.84 });
+  const wallBaseMat = new THREE.MeshStandardMaterial({ color: '#5c584d', roughness: 0.9 });
+  const wireMetalMat = new THREE.MeshStandardMaterial({ color: '#a1a1aa', roughness: 0.45, metalness: 0.65 });
+  const oliveArmyMat = new THREE.MeshStandardMaterial({ color: '#4b5332', roughness: 0.78 });
+  const sandbagMat = new THREE.MeshStandardMaterial({ color: '#b59e72', roughness: 0.92 });
+
+  // Collect 4m concrete perimeter wall segments along North, South, East, West-North & West-South
+  const wallSegs: Array<{ x: number; z: number; rotY: number }> = [];
+  // North wall (x: 194..266, z: -156) & South wall (x: 194..266, z: -76)
+  for (let wx = 194; wx <= 266; wx += 4) {
+    wallSegs.push({ x: wx, z: -156, rotY: 0 });
+    wallSegs.push({ x: wx, z: -76, rotY: Math.PI });
+  }
+  // East wall (x: 268, z: -154..-78)
+  for (let wz = -154; wz <= -78; wz += 4) {
+    wallSegs.push({ x: 268, z: wz, rotY: Math.PI / 2 });
+  }
+  // West wall North wing (x: 192, z: -154..-124) & South wing (x: 192, z: -108..-78) leaving 14m open gate
+  for (let wz = -154; wz <= -124; wz += 4) {
+    wallSegs.push({ x: 192, z: wz, rotY: -Math.PI / 2 });
+  }
+  for (let wz = -108; wz <= -78; wz += 4) {
+    wallSegs.push({ x: 192, z: wz, rotY: -Math.PI / 2 });
+  }
+
+  const segGeo = new THREE.BoxGeometry(3.92, 3.6, 1.1);
+  const segBaseGeo = new THREE.BoxGeometry(4.0, 0.72, 1.75);
+  const postGeo = new THREE.CylinderGeometry(0.06, 0.06, 0.95, 6);
+  const wireCoilGeo = new THREE.TorusGeometry(0.32, 0.032, 5, 12);
+
+  const wallSegInst = new THREE.InstancedMesh(segGeo, wallPanelMat, wallSegs.length);
+  wallSegInst.castShadow = true;
+  wallSegInst.receiveShadow = true;
+  const wallBaseInst = new THREE.InstancedMesh(segBaseGeo, wallBaseMat, wallSegs.length);
+  const wirePostInst = new THREE.InstancedMesh(postGeo, wireMetalMat, wallSegs.length);
+  const wireCoilInst = new THREE.InstancedMesh(wireCoilGeo, wireMetalMat, wallSegs.length * 2);
+
+  wallSegs.forEach((seg, idx) => {
+    dummy.position.set(seg.x, 1.8, seg.z);
+    dummy.rotation.set(0, seg.rotY, 0);
+    dummy.scale.setScalar(1);
+    dummy.updateMatrix();
+    wallSegInst.setMatrixAt(idx, dummy.matrix);
+
+    dummy.position.set(seg.x, 0.36, seg.z);
+    dummy.updateMatrix();
+    wallBaseInst.setMatrixAt(idx, dummy.matrix);
+
+    dummy.position.set(seg.x, 3.98, seg.z);
+    dummy.updateMatrix();
+    wirePostInst.setMatrixAt(idx, dummy.matrix);
+
+    for (let c = 0; c < 2; c++) {
+      const off = c === 0 ? -1.0 : 1.0;
+      const cx = seg.x + Math.cos(seg.rotY) * off;
+      const cz = seg.z - Math.sin(seg.rotY) * off;
+      dummy.position.set(cx, 4.18, cz);
+      dummy.rotation.set(0.2, seg.rotY + Math.PI / 2, 0);
+      dummy.updateMatrix();
+      wireCoilInst.setMatrixAt(idx * 2 + c, dummy.matrix);
+    }
+  });
+  wallSegInst.instanceMatrix.needsUpdate = true;
+  wallBaseInst.instanceMatrix.needsUpdate = true;
+  wirePostInst.instanceMatrix.needsUpdate = true;
+  wireCoilInst.instanceMatrix.needsUpdate = true;
+  wallSegInst.computeBoundingSphere();
+  wallBaseInst.computeBoundingSphere();
+  wirePostInst.computeBoundingSphere();
+  wireCoilInst.computeBoundingSphere();
+  cityGroup.add(wallSegInst, wallBaseInst, wirePostInst, wireCoilInst);
+
+  // 4 Corner Guard Watchtowers
+  const towerCorners: Array<[number, number]> = [
+    [192, -156],
+    [192, -76],
+    [268, -156],
+    [268, -76],
+  ];
+  const legGeo = new THREE.CylinderGeometry(0.14, 0.18, 5.8, 7);
+  const deckGeo = new THREE.BoxGeometry(4.2, 0.35, 4.2);
+  const parapetGeo = new THREE.BoxGeometry(4.35, 1.1, 4.35);
+  const towerRoofGeo = new THREE.ConeGeometry(3.4, 1.35, 4);
+
+  const towerLegInst = new THREE.InstancedMesh(legGeo, trimMat, 16);
+  const towerDeckInst = new THREE.InstancedMesh(deckGeo, wallBaseMat, 4);
+  const towerParapetInst = new THREE.InstancedMesh(parapetGeo, oliveArmyMat, 4);
+  const towerRoofInst = new THREE.InstancedMesh(towerRoofGeo, oliveArmyMat, 4);
+  towerDeckInst.castShadow = true;
+  towerParapetInst.castShadow = true;
+
+  towerCorners.forEach(([tx, tz], tIdx) => {
+    let lIdx = tIdx * 4;
+    for (const sx of [-1.45, 1.45]) {
+      for (const sz of [-1.45, 1.45]) {
+        dummy.position.set(tx + sx, 2.85, tz + sz);
+        dummy.rotation.set(sz * 0.04, 0, -sx * 0.04);
+        dummy.scale.setScalar(1);
+        dummy.updateMatrix();
+        towerLegInst.setMatrixAt(lIdx++, dummy.matrix);
+      }
+    }
+    dummy.position.set(tx, 5.75, tz);
+    dummy.rotation.set(0, 0, 0);
+    dummy.updateMatrix();
+    towerDeckInst.setMatrixAt(tIdx, dummy.matrix);
+
+    dummy.position.set(tx, 6.48, tz);
+    dummy.updateMatrix();
+    towerParapetInst.setMatrixAt(tIdx, dummy.matrix);
+
+    dummy.position.set(tx, 8.9, tz);
+    dummy.rotation.set(0, Math.PI / 4, 0);
+    dummy.updateMatrix();
+    towerRoofInst.setMatrixAt(tIdx, dummy.matrix);
+
+    for (const px of [-1.65, 1.65]) {
+      for (const pz of [-1.65, 1.65]) {
+        const roofPost = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 1.9, 6), trimMat);
+        roofPost.position.set(tx + px, 7.6, tz + pz);
+        cityGroup.add(roofPost);
+      }
+    }
+  });
+  towerLegInst.instanceMatrix.needsUpdate = true;
+  towerDeckInst.instanceMatrix.needsUpdate = true;
+  towerParapetInst.instanceMatrix.needsUpdate = true;
+  towerRoofInst.instanceMatrix.needsUpdate = true;
+  towerLegInst.computeBoundingSphere();
+  towerDeckInst.computeBoundingSphere();
+  towerParapetInst.computeBoundingSphere();
+  towerRoofInst.computeBoundingSphere();
+  cityGroup.add(towerLegInst, towerDeckInst, towerParapetInst, towerRoofInst);
+
+  // West Entrance Checkpoint Guard Booth, Bollards & Raised Striped Barrier Arm (x = 192, z = -116)
+  const gateBooth = new THREE.Mesh(new THREE.BoxGeometry(2.6, 2.8, 3.0), oliveArmyMat);
+  gateBooth.position.set(191.5, 1.4, -124.2);
+  gateBooth.castShadow = true;
+  const boothGlass = new THREE.Mesh(
+    new THREE.BoxGeometry(2.7, 0.9, 2.4),
+    new THREE.MeshPhysicalMaterial({ color: '#0f172a', roughness: 0.08, clearcoat: 1.0 })
+  );
+  boothGlass.position.set(191.5, 1.85, -124.2);
+  const gateBanner = new THREE.Mesh(new THREE.BoxGeometry(1.1, 1.1, 15.2), oliveArmyMat);
+  gateBanner.position.set(192, 5.2, -116);
+  const gateSignGlow = new THREE.Mesh(
+    new THREE.BoxGeometry(1.22, 0.65, 9.5),
+    new THREE.MeshStandardMaterial({ color: '#eab308', emissive: '#f59e0b', emissiveIntensity: 0.45 })
+  );
+  gateSignGlow.position.set(192, 5.2, -116);
+  const gateArmPivot = new THREE.Group();
+  gateArmPivot.position.set(190.4, 1.15, -122.0);
+  gateArmPivot.rotation.x = 0.85; // Raised cleanly open so cars/horses pass freely
+  const armRed = new THREE.Mesh(
+    new THREE.BoxGeometry(0.14, 0.14, 6.2),
+    new THREE.MeshStandardMaterial({ color: '#dc2626', roughness: 0.4 })
+  );
+  armRed.position.set(0, 0, 3.1);
+  const armWhite = new THREE.Mesh(
+    new THREE.BoxGeometry(0.15, 0.15, 2.4),
+    new THREE.MeshStandardMaterial({ color: '#f8fafc', roughness: 0.4 })
+  );
+  armWhite.position.set(0, 0, 2.8);
+  gateArmPivot.add(armRed, armWhite);
+  cityGroup.add(gateBooth, boothGlass, gateBanner, gateSignGlow, gateArmPivot);
+
+  for (const gz of [-122.4, -109.6]) {
+    const pillar = new THREE.Mesh(new THREE.BoxGeometry(1.4, 4.9, 1.4), wallBaseMat);
+    pillar.position.set(192, 2.45, gz);
+    const beacon = new THREE.Mesh(
+      new THREE.SphereGeometry(0.28, 8, 8),
+      new THREE.MeshBasicMaterial({ color: '#f59e0b' })
+    );
+    beacon.position.set(192, 5.9, gz);
+    cityGroup.add(pillar, beacon);
+  }
+
+  // Interior Sandbag Bunker & Instanced Military Cargo Crates
+  const sandbagWall = new THREE.Mesh(new THREE.BoxGeometry(7.5, 1.25, 1.4), sandbagMat);
+  sandbagWall.position.set(228, 0.625, -124);
+  sandbagWall.receiveShadow = true;
+  cityGroup.add(sandbagWall);
+
+  const crateCoords: Array<[number, number, number]> = [
+    [232, -128, 0.2],
+    [234, -128, -0.1],
+    [233, -126, 0.4],
+    [232, -102, 0.0],
+    [234.2, -102, 0.3],
+    [206, -130, 0.15],
+  ];
+  const crateInst = new THREE.InstancedMesh(new THREE.BoxGeometry(1.4, 1.1, 1.4), oliveArmyMat, crateCoords.length);
+  crateCoords.forEach(([cx, cz, rot], idx) => {
+    dummy.position.set(cx, 0.55, cz);
+    dummy.rotation.set(0, rot, 0);
+    dummy.scale.setScalar(1);
+    dummy.updateMatrix();
+    crateInst.setMatrixAt(idx, dummy.matrix);
+  });
+  crateInst.instanceMatrix.needsUpdate = true;
+  crateInst.computeBoundingSphere();
+  cityGroup.add(crateInst);
+
+  disposables.push(
+    armyPadMat,
+    wallPanelMat,
+    wallBaseMat,
+    wireMetalMat,
+    oliveArmyMat,
+    sandbagMat,
+    segGeo,
+    segBaseGeo,
+    postGeo,
+    wireCoilGeo,
+    legGeo,
+    deckGeo,
+    parapetGeo,
+    towerRoofGeo
+  );
+
   // 17. SOLARIS MARINA SLIP & MOORED LUXURY YACHT (SE Waterfront)
   const marinaPier = new THREE.Mesh(new THREE.BoxGeometry(9.5, 0.35, 52), woodMat);
   marinaPier.position.set(118, 0.92, 212);
   marinaPier.castShadow = true;
   cityGroup.add(marinaPier);
 
-  // Offshore Luxury Yacht at [148, 252]
+  // Offshore Luxury Motor Yacht at [148, 252]
   const yachtGroup = new THREE.Group();
-  yachtGroup.position.set(148, -0.1, 252);
+  yachtGroup.position.set(148, -0.15, 252);
   yachtGroup.rotation.y = -0.35;
-  const yHull = new THREE.Mesh(
-    new THREE.BoxGeometry(6.4, 2.2, 22),
-    new THREE.MeshPhysicalMaterial({ color: '#f8fafc', roughness: 0.2, clearcoat: 0.9 })
+
+  const yWhiteHullMat = new THREE.MeshPhysicalMaterial({
+    color: '#f8fafc',
+    roughness: 0.18,
+    metalness: 0.06,
+    clearcoat: 0.92,
+    clearcoatRoughness: 0.08,
+  });
+  const yNavyStripeMat = new THREE.MeshStandardMaterial({
+    color: '#0f2942',
+    roughness: 0.3,
+    metalness: 0.2,
+  });
+  const yTeakDeckMat = new THREE.MeshStandardMaterial({
+    color: '#9a6b42',
+    roughness: 0.72,
+    metalness: 0.04,
+  });
+  const yGlassMat = new THREE.MeshPhysicalMaterial({
+    color: '#0b1322',
+    roughness: 0.06,
+    metalness: 0.15,
+    clearcoat: 1.0,
+  });
+  const yChromeMat = new THREE.MeshStandardMaterial({
+    color: '#e2e8f0',
+    roughness: 0.2,
+    metalness: 0.9,
+  });
+  const yCreamMat = new THREE.MeshStandardMaterial({
+    color: '#f1ede4',
+    roughness: 0.55,
+  });
+
+  // Tapered V-hull planform (bow at +Z = +12.5, stern at -Z = -10.5)
+  const yachtShape = new THREE.Shape();
+  yachtShape.moveTo(0, 12.6);
+  yachtShape.quadraticCurveTo(2.9, 8.2, 3.2, 2.0);
+  yachtShape.lineTo(3.15, -9.8);
+  yachtShape.quadraticCurveTo(2.6, -10.6, 0, -10.6);
+  yachtShape.quadraticCurveTo(-2.6, -10.6, -3.15, -9.8);
+  yachtShape.lineTo(-3.2, 2.0);
+  yachtShape.quadraticCurveTo(-2.9, 8.2, 0, 12.6);
+  yachtShape.closePath();
+
+  const yBootGeo = new THREE.ExtrudeGeometry(yachtShape, { depth: 0.75, bevelEnabled: false });
+  yBootGeo.rotateX(Math.PI / 2);
+  const yBoot = new THREE.Mesh(yBootGeo, yNavyStripeMat);
+  yBoot.position.y = 0.65;
+
+  const yMainHullGeo = new THREE.ExtrudeGeometry(yachtShape, {
+    depth: 1.45,
+    bevelEnabled: true,
+    bevelSize: 0.16,
+    bevelThickness: 0.18,
+    bevelSegments: 2,
+  });
+  yMainHullGeo.rotateX(Math.PI / 2);
+  const yMainHull = new THREE.Mesh(yMainHullGeo, yWhiteHullMat);
+  yMainHull.position.y = 2.05;
+  yMainHull.castShadow = true;
+  yMainHull.receiveShadow = true;
+
+  // Stern teak swim platform & aft transom steps
+  const ySwimPlat = new THREE.Mesh(new THREE.BoxGeometry(5.2, 0.22, 2.1), yTeakDeckMat);
+  ySwimPlat.position.set(0, 0.58, -11.1);
+  const yForeTeak = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.08, 6.4), yTeakDeckMat);
+  yForeTeak.position.set(0, 2.25, 6.2);
+  const yAftTeak = new THREE.Mesh(new THREE.BoxGeometry(5.1, 0.08, 3.8), yTeakDeckMat);
+  yAftTeak.position.set(0, 2.25, -8.3);
+
+  // Sunbed cushions on foredeck
+  const yBowPad = new THREE.Mesh(new THREE.BoxGeometry(2.3, 0.2, 3.1), yCreamMat);
+  yBowPad.position.set(0, 2.38, 6.4);
+
+  // Main saloon superstructure with swept-back profile
+  const ySalon = new THREE.Mesh(new THREE.BoxGeometry(4.75, 1.55, 10.6), yWhiteHullMat);
+  ySalon.position.set(0, 2.95, -1.3);
+  ySalon.castShadow = true;
+
+  const ySalonFront = new THREE.Mesh(new THREE.BoxGeometry(4.65, 1.35, 2.6), yWhiteHullMat);
+  ySalonFront.position.set(0, 2.78, 4.1);
+  ySalonFront.rotation.x = 0.34;
+
+  // Wrap-around dark glass band + hull portholes
+  const ySalonGlass = new THREE.Mesh(new THREE.BoxGeometry(4.88, 0.78, 8.6), yGlassMat);
+  ySalonGlass.position.set(0, 3.05, -0.8);
+  const yWindshield = new THREE.Mesh(new THREE.BoxGeometry(4.45, 0.85, 0.3), yGlassMat);
+  yWindshield.position.set(0, 3.15, 4.15);
+  yWindshield.rotation.x = -0.52;
+
+  for (const side of [-1, 1]) {
+    for (const pz of [2.5, -0.8, -4.1]) {
+      const portWin = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.38, 1.45), yGlassMat);
+      portWin.position.set(side * 3.18, 1.48, pz);
+      yachtGroup.add(portWin);
+    }
+    // Stainless bow rail bars
+    const rail = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 8.2, 6), yChromeMat);
+    rail.rotation.x = Math.PI / 2;
+    rail.rotation.y = side * -0.22;
+    rail.position.set(side * 1.95, 2.82, 7.6);
+    yachtGroup.add(rail);
+  }
+
+  // Upper flybridge deck, helm console & swept radar arch
+  const yFlyDeck = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.26, 7.4), yWhiteHullMat);
+  yFlyDeck.position.set(0, 3.85, -2.6);
+  const yFlyHelm = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.72, 1.1), yCreamMat);
+  yFlyHelm.position.set(0, 4.3, -0.4);
+  const yFlyVisor = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.45, 0.14), yGlassMat);
+  yFlyVisor.position.set(0, 4.42, 0.4);
+  yFlyVisor.rotation.x = -0.45;
+  const yRadarArch = new THREE.Mesh(new THREE.TorusGeometry(2.05, 0.16, 8, 18, Math.PI), yWhiteHullMat);
+  yRadarArch.position.set(0, 3.92, -3.5);
+  const ySatDome = new THREE.Mesh(new THREE.SphereGeometry(0.36, 12, 10), yWhiteHullMat);
+  ySatDome.position.set(0, 6.22, -3.5);
+  const yMast = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.08, 1.1, 8), yChromeMat);
+  yMast.position.set(0, 6.55, -3.8);
+
+  // Twin outboard / stern wake trim + aft sofa
+  const yAftSofa = new THREE.Mesh(new THREE.BoxGeometry(3.6, 0.65, 1.15), yCreamMat);
+  yAftSofa.position.set(0, 2.6, -9.2);
+
+  yachtGroup.add(
+    yBoot,
+    yMainHull,
+    ySwimPlat,
+    yForeTeak,
+    yAftTeak,
+    yBowPad,
+    ySalon,
+    ySalonFront,
+    ySalonGlass,
+    yWindshield,
+    yFlyDeck,
+    yFlyHelm,
+    yFlyVisor,
+    yRadarArch,
+    ySatDome,
+    yMast,
+    yAftSofa
   );
-  yHull.position.y = 1.0;
-  const yCabin = new THREE.Mesh(
-    new THREE.BoxGeometry(4.8, 2.0, 11.5),
-    new THREE.MeshPhysicalMaterial({ color: '#f1f5f9', roughness: 0.22, clearcoat: 0.85 })
-  );
-  yCabin.position.set(0, 3.0, -1.5);
-  const yGlass = new THREE.Mesh(
-    new THREE.BoxGeometry(5.0, 0.85, 8.2),
-    new THREE.MeshPhysicalMaterial({ color: '#0f172a', roughness: 0.08, clearcoat: 1.0 })
-  );
-  yGlass.position.set(0, 3.1, -0.5);
-  const yFlybridge = new THREE.Mesh(
-    new THREE.BoxGeometry(3.8, 1.1, 5.5),
-    new THREE.MeshStandardMaterial({ color: '#1e293b', roughness: 0.35 })
-  );
-  yFlybridge.position.set(0, 4.4, -2.5);
-  yachtGroup.add(yHull, yCabin, yGlass, yFlybridge);
   cityGroup.add(yachtGroup);
+
+  // 18. TEN CARGO OIL TANKER SHIP (Offshore Harbor Ocean Landmark at x: -78, z: 274)
+  const tankerGroup = new THREE.Group();
+  tankerGroup.position.set(-78, -0.45, 274);
+  tankerGroup.rotation.y = Math.PI / 2;
+
+  const tCrimsonHullMat = new THREE.MeshStandardMaterial({ color: '#8f1d1d', roughness: 0.62, metalness: 0.15 });
+  const tBlackHullMat = new THREE.MeshStandardMaterial({ color: '#14171d', roughness: 0.56, metalness: 0.24 });
+  const tHullBannerMat = new THREE.MeshStandardMaterial({ map: tankerTex.hullSide, roughness: 0.52, metalness: 0.22 });
+  const tDeckMat = new THREE.MeshStandardMaterial({ color: '#5f6873', roughness: 0.78, metalness: 0.2 });
+  const tWhiteBridgeMat = new THREE.MeshStandardMaterial({ color: '#f4f4f5', roughness: 0.45 });
+  const tPipeMat = new THREE.MeshStandardMaterial({ color: '#cbd5e1', roughness: 0.35, metalness: 0.65 });
+  const tDarkGlassMat = new THREE.MeshPhysicalMaterial({ color: '#0f172a', roughness: 0.08, clearcoat: 1.0 });
+  const tBrassMat = new THREE.MeshStandardMaterial({ color: '#d97706', roughness: 0.28, metalness: 0.85 });
+  const tLifeboatMat = new THREE.MeshStandardMaterial({ color: '#ea580c', roughness: 0.38 });
+  const tHeliMat = new THREE.MeshStandardMaterial({ map: tankerTex.helipad, roughness: 0.72 });
+  const tFunnelMat = new THREE.MeshStandardMaterial({ map: tankerTex.funnel, roughness: 0.46 });
+
+  // Tapered ocean hull planform (bow at +Z = +34, stern at -Z = -34, half-beam X = 7.2)
+  const hullPlan = new THREE.Shape();
+  hullPlan.moveTo(0, 34.5);
+  hullPlan.quadraticCurveTo(6.4, 28, 7.2, 16);
+  hullPlan.lineTo(7.2, -26);
+  hullPlan.quadraticCurveTo(6.5, -33, 3.2, -34);
+  hullPlan.lineTo(-3.2, -34);
+  hullPlan.quadraticCurveTo(-6.5, -33, -7.2, -26);
+  hullPlan.lineTo(-7.2, 16);
+  hullPlan.quadraticCurveTo(-6.4, 28, 0, 34.5);
+  hullPlan.closePath();
+
+  const lowerHullGeo = new THREE.ExtrudeGeometry(hullPlan, { depth: 3.1, bevelEnabled: false });
+  lowerHullGeo.rotateX(Math.PI / 2);
+  const lowerHull = new THREE.Mesh(lowerHullGeo, tCrimsonHullMat);
+  lowerHull.position.y = 2.6;
+
+  const upperHullGeo = new THREE.ExtrudeGeometry(hullPlan, { depth: 3.4, bevelEnabled: false });
+  upperHullGeo.rotateX(Math.PI / 2);
+  const upperHull = new THREE.Mesh(upperHullGeo, tBlackHullMat);
+  upperHull.position.y = 6.0;
+  upperHull.castShadow = true;
+  upperHull.receiveShadow = true;
+
+  // Bulbous bow + rudder & brass 4-blade propeller
+  const bowBulb = new THREE.Mesh(new THREE.SphereGeometry(1.45, 14, 12), tCrimsonHullMat);
+  bowBulb.scale.set(0.85, 0.9, 2.1);
+  bowBulb.position.set(0, 0.9, 34.2);
+
+  const rudder = new THREE.Mesh(new THREE.BoxGeometry(0.45, 3.0, 2.6), tCrimsonHullMat);
+  rudder.position.set(0, 1.2, -33.2);
+  const propHub = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 1.2, 10), tBrassMat);
+  propHub.rotation.x = Math.PI / 2;
+  propHub.position.set(0, 1.2, -31.4);
+
+  // Slate cargo deck & raised forecastle / stern coaming
+  const mainDeckGeo = new THREE.ExtrudeGeometry(hullPlan, { depth: 0.25, bevelEnabled: false });
+  mainDeckGeo.rotateX(Math.PI / 2);
+  const mainDeck = new THREE.Mesh(mainDeckGeo, tDeckMat);
+  mainDeck.position.y = 6.26;
+  mainDeck.scale.set(0.96, 1, 0.98);
+  mainDeck.receiveShadow = true;
+
+  // Bow Yellow "H" Helipad Deck Circle
+  const bowHelipad = new THREE.Mesh(new THREE.CircleGeometry(4.2, 24), tHeliMat);
+  bowHelipad.rotation.x = -Math.PI / 2;
+  bowHelipad.rotation.z = Math.PI / 2;
+  bowHelipad.position.set(0, 6.29, 24.5);
+
+  // "TEN" Side Hull Lettering Panels (port & starboard)
+  for (const side of [-1, 1]) {
+    const tenPanel = new THREE.Mesh(new THREE.PlaneGeometry(28, 3.1), tHullBannerMat);
+    tenPanel.position.set(side * 7.24, 4.35, 3.5);
+    tenPanel.rotation.y = side > 0 ? Math.PI / 2 : -Math.PI / 2;
+    tankerGroup.add(tenPanel);
+
+    // Gunwale rail
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.55, 44), tWhiteBridgeMat);
+    rail.position.set(side * 6.95, 6.5, -2);
+    tankerGroup.add(rail);
+  }
+
+  // Central Pipeline Manifold + Cross Piping
+  for (const px of [-1.2, -0.4, 0.4, 1.2]) {
+    const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 36, 8), tPipeMat);
+    pipe.rotation.x = Math.PI / 2;
+    pipe.position.set(px, 6.55, 2.5);
+    tankerGroup.add(pipe);
+  }
+  const crossManifold = new THREE.Mesh(new THREE.BoxGeometry(9.2, 0.55, 1.8), tPipeMat);
+  crossManifold.position.set(0, 6.65, 4.0);
+  tankerGroup.add(crossManifold);
+
+  // Twin Pedestal Cargo Deck Cranes
+  for (const side of [-1, 1]) {
+    const ped = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.65, 3.4, 10), tWhiteBridgeMat);
+    ped.position.set(side * 4.4, 7.9, 6.0);
+    const cab = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.4, 1.8), tWhiteBridgeMat);
+    cab.position.set(side * 4.4, 9.8, 6.0);
+    const boom = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.42, 8.8), tWhiteBridgeMat);
+    boom.position.set(side * 3.6, 11.4, 1.8);
+    boom.rotation.x = -0.32;
+    tankerGroup.add(ped, cab, boom);
+  }
+
+  // Multi-Tier White Aft Bridge Superstructure
+  const deckHouse1 = new THREE.Mesh(new THREE.BoxGeometry(11.6, 4.6, 9.2), tWhiteBridgeMat);
+  deckHouse1.position.set(0, 8.5, -20.5);
+  deckHouse1.castShadow = true;
+  const deckHouse2 = new THREE.Mesh(new THREE.BoxGeometry(10.6, 3.6, 7.8), tWhiteBridgeMat);
+  deckHouse2.position.set(0, 12.6, -20.2);
+  deckHouse2.castShadow = true;
+  const bridgeTier = new THREE.Mesh(new THREE.BoxGeometry(14.8, 2.3, 4.2), tWhiteBridgeMat);
+  bridgeTier.position.set(0, 15.5, -18.5);
+  bridgeTier.castShadow = true;
+  const bridgeGlass = new THREE.Mesh(new THREE.BoxGeometry(10.2, 1.05, 4.35), tDarkGlassMat);
+  bridgeGlass.position.set(0, 15.7, -18.45);
+  const radarMast = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.35, 5.2, 8), tWhiteBridgeMat);
+  radarMast.position.set(0, 19.2, -18.6);
+  const radarBar = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.32, 0.35), tWhiteBridgeMat);
+  radarBar.position.set(0, 21.4, -18.6);
+
+  // Navy/Yellow Funnel with Crimson "T" Crest
+  const funnelBody = new THREE.Mesh(new THREE.BoxGeometry(3.4, 5.4, 4.6), tWhiteBridgeMat);
+  funnelBody.position.set(0, 13.8, -25.8);
+  funnelBody.castShadow = true;
+  for (const side of [-1, 1]) {
+    const fPanel = new THREE.Mesh(new THREE.PlaneGeometry(4.2, 4.8), tFunnelMat);
+    fPanel.position.set(side * 1.72, 13.8, -25.8);
+    fPanel.rotation.y = side > 0 ? Math.PI / 2 : -Math.PI / 2;
+    tankerGroup.add(fPanel);
+  }
+  const funnelCap = new THREE.Mesh(new THREE.BoxGeometry(3.5, 0.85, 4.7), tBlackHullMat);
+  funnelCap.position.set(0, 16.7, -25.8);
+
+  // Orange Lifeboat + Stern Mooring Winches
+  const lifeboat = new THREE.Mesh(new THREE.CapsuleGeometry(0.68, 2.2, 6, 10), tLifeboatMat);
+  lifeboat.rotation.x = Math.PI / 2;
+  lifeboat.position.set(-5.6, 8.8, -14.8);
+  const winchL = new THREE.Mesh(new THREE.CylinderGeometry(0.65, 0.65, 1.8, 10), tPipeMat);
+  winchL.rotation.z = Math.PI / 2;
+  winchL.position.set(-2.2, 6.75, -30.5);
+  const winchR = winchL.clone();
+  winchR.position.x = 2.2;
+
+  tankerGroup.add(
+    lowerHull,
+    upperHull,
+    bowBulb,
+    rudder,
+    propHub,
+    mainDeck,
+    bowHelipad,
+    deckHouse1,
+    deckHouse2,
+    bridgeTier,
+    bridgeGlass,
+    radarMast,
+    radarBar,
+    funnelBody,
+    funnelCap,
+    lifeboat,
+    winchL,
+    winchR
+  );
+  cityGroup.add(tankerGroup);
+  disposables.push(
+    tCrimsonHullMat,
+    tBlackHullMat,
+    tHullBannerMat,
+    tDeckMat,
+    tWhiteBridgeMat,
+    tPipeMat,
+    tDarkGlassMat,
+    tBrassMat,
+    tLifeboatMat,
+    tHeliMat,
+    tFunnelMat,
+    lowerHullGeo,
+    upperHullGeo,
+    mainDeckGeo
+  );
 
   return {
     cityGroup,

@@ -180,7 +180,7 @@ export function PauseMenu({ onOpenSettings }: PauseMenuProps) {
               className="col-span-2 flex items-center justify-center gap-2 rounded-lg border border-white/10 bg-zinc-800/60 px-3.5 py-2.5 text-xs font-semibold text-zinc-200 hover:bg-zinc-800"
             >
               <Backpack className="h-4 w-4 text-cyan-400" />
-              <span>Gear & Wardrobe</span>
+              <span>Inventory &amp; Character</span>
             </button>
           </div>
 

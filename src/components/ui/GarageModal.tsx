@@ -7,30 +7,24 @@ import {
   Landmark,
   Palette,
   ShoppingBag,
-  User,
-  Users,
   X,
 } from 'lucide-react';
 import {
   MISSIONS,
   PAINT_SWATCHES,
-  PLAYABLE_CHARACTERS,
-  PLAYER_OUTFITS,
   PROPERTIES,
   SHOP_ITEMS,
   VEHICLE_SPECS,
   WEAPONS,
 } from '../../lib/gameConfig';
 import { useGameStore } from '../../store/gameStore';
-import type { CharacterId, WeaponId } from '../../types/game';
+import type { WeaponId } from '../../types/game';
 
 export function ActiveWorldModals() {
   const activeModal = useGameStore((s) => s.activeModal);
   const setActiveModal = useGameStore((s) => s.setActiveModal);
   const money = useGameStore((s) => s.money);
   const bankBalance = useGameStore((s) => s.bankBalance);
-  const activeCharacterId = useGameStore((s) => s.activeCharacterId);
-  const switchCharacter = useGameStore((s) => s.switchCharacter);
 
   const ownedVehicleIds = useGameStore((s) => s.ownedVehicleIds);
   const activeVehicleSpecId = useGameStore((s) => s.activeVehicleSpecId);
@@ -39,11 +33,8 @@ export function ActiveWorldModals() {
   const selectGarageVehicle = useGameStore((s) => s.selectGarageVehicle);
   const setVehiclePaint = useGameStore((s) => s.setVehiclePaint);
 
-  const outfitId = useGameStore((s) => s.outfitId);
-  const setOutfit = useGameStore((s) => s.setOutfit);
   const inventory = useGameStore((s) => s.inventory);
   const buyShopItem = useGameStore((s) => s.buyShopItem);
-  const useInventoryItem = useGameStore((s) => s.useInventoryItem);
 
   const unlockedWeapons = useGameStore((s) => s.unlockedWeapons);
   const weaponAmmo = useGameStore((s) => s.weaponAmmo);
@@ -60,7 +51,15 @@ export function ActiveWorldModals() {
   const startMission = useGameStore((s) => s.startMission);
   const abandonMission = useGameStore((s) => s.abandonMission);
 
-  if (activeModal === 'none' || activeModal === 'settings' || activeModal === 'map') return null;
+  if (
+    activeModal === 'none' ||
+    activeModal === 'settings' ||
+    activeModal === 'map' ||
+    activeModal === 'inventory' ||
+    activeModal === 'characters'
+  ) {
+    return null;
+  }
 
   const modalTitle =
     activeModal === 'garage'
@@ -71,11 +70,7 @@ export function ActiveWorldModals() {
           ? 'Story Missions & Contracts'
           : activeModal === 'atm'
             ? 'Meridian Bank ATM'
-            : activeModal === 'properties'
-              ? 'Solaris Bay Real Estate'
-              : activeModal === 'characters'
-                ? 'Select Playable Character'
-                : 'Gear, Outfits & Inventory';
+            : 'Solaris Bay Real Estate';
 
   const totalPassiveIncome = ownedProperties.reduce((acc, pid) => {
     const p = PROPERTIES.find((pr) => pr.id === pid);
@@ -200,7 +195,7 @@ export function ActiveWorldModals() {
                 <span>Firearms & Ammunition</span>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {(['pistol', 'rifle', 'shotgun'] as WeaponId[]).map((wid) => {
+                {(['pistol', 'smg', 'rifle', 'shotgun', 'rpg'] as WeaponId[]).map((wid) => {
                   const w = WEAPONS[wid];
                   const owned = unlockedWeapons.includes(wid);
                   const ammo = weaponAmmo[wid] ?? 0;
@@ -227,7 +222,7 @@ export function ActiveWorldModals() {
                           >
                             Buy Gun ${w.price.toLocaleString()}
                           </button>
-                        ) : (
+                        ) : w.ammoPrice > 0 ? (
                           <button
                             type="button"
                             onClick={() => buyAmmo(wid)}
@@ -235,6 +230,10 @@ export function ActiveWorldModals() {
                           >
                             +{w.magSize * 2} Ammo (${w.ammoPrice})
                           </button>
+                        ) : (
+                          <div className="flex-1 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-center text-xs font-semibold text-emerald-300">
+                            Melee · No Ammo Needed
+                          </div>
                         )}
                       </div>
                     </div>
@@ -399,115 +398,7 @@ export function ActiveWorldModals() {
           </div>
         )}
 
-        {/* PLAYABLE CHARACTER SWITCHER */}
-        {activeModal === 'characters' && (
-          <div className="mt-5 space-y-3">
-            {(Object.keys(PLAYABLE_CHARACTERS) as CharacterId[]).map((cid) => {
-              const char = PLAYABLE_CHARACTERS[cid];
-              const isActive = activeCharacterId === cid;
-              return (
-                <div
-                  key={cid}
-                  className={`rounded-lg border p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
-                    isActive ? 'border-amber-400/70 bg-zinc-800/80' : 'border-white/10 bg-zinc-950/60'
-                  }`}
-                >
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <Users className="h-4 w-4 text-amber-400" />
-                      <span className="font-display text-base font-bold text-zinc-100">{char.name}</span>
-                      <span className="text-[11px] font-medium text-zinc-400">· {char.role}</span>
-                    </div>
-                    <div className="mt-1 text-xs font-semibold text-emerald-400">{char.perkLabel}</div>
-                    <p className="mt-1 text-xs text-zinc-300">{char.bio}</p>
-                    <div className="mt-1.5 text-[11px] text-zinc-400">
-                      Safehouse: {char.homeLabel} · Ride: {VEHICLE_SPECS[char.personalVehicleId]?.name}
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    disabled={isActive}
-                    onClick={() => switchCharacter(cid)}
-                    className={`shrink-0 rounded-lg px-4 py-2 text-xs font-bold ${
-                      isActive
-                        ? 'border border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
-                        : 'bg-amber-500 text-zinc-950 hover:bg-amber-400'
-                    }`}
-                  >
-                    {isActive ? 'Active Hero' : `Play as ${char.codename}`}
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        )}
 
-        {/* INVENTORY & CHARACTER OUTFITS */}
-        {activeModal === 'inventory' && (
-          <div className="mt-5 space-y-6">
-            <div>
-              <h3 className="text-xs font-semibold text-zinc-300 mb-3">Consumable Supplies</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {SHOP_ITEMS.map((item) => {
-                  const qty = inventory[item.id] ?? 0;
-                  return (
-                    <div
-                      key={item.id}
-                      className="flex items-center justify-between rounded-lg border border-white/10 bg-zinc-950/60 p-3.5"
-                    >
-                      <div>
-                        <div className="text-sm font-semibold text-zinc-100">
-                          {item.name} <span className="font-mono-num text-amber-400">×{qty}</span>
-                        </div>
-                        <div className="text-[11px] text-zinc-400 mt-0.5">{item.description}</div>
-                      </div>
-                      <button
-                        type="button"
-                        disabled={qty <= 0}
-                        onClick={() => useInventoryItem(item.id)}
-                        className="rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-bold text-zinc-950 hover:bg-amber-400 disabled:opacity-40"
-                      >
-                        Use
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="border-t border-white/10 pt-5">
-              <div className="flex items-center gap-2 text-xs font-semibold text-zinc-300 mb-3">
-                <User className="h-4 w-4 text-cyan-400" />
-                <span>Character Wardrobe</span>
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                {PLAYER_OUTFITS.map((o) => {
-                  const active = outfitId === o.id;
-                  return (
-                    <button
-                      key={o.id}
-                      type="button"
-                      onClick={() => setOutfit(o.id)}
-                      className={`rounded-lg border p-3 text-left transition-colors ${
-                        active
-                          ? 'border-amber-400 bg-zinc-800'
-                          : 'border-white/10 bg-zinc-950/60 hover:bg-zinc-800'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2">
-                        <span
-                          className="h-4 w-4 rounded-sm border border-white/20"
-                          style={{ backgroundColor: o.jacketColor }}
-                        />
-                        <span className="text-xs font-semibold text-zinc-100">{o.name}</span>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* MISSIONS & STORYLINE */}
         {activeModal === 'missions' && (

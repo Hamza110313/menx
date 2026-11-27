@@ -122,6 +122,7 @@ interface GameStoreState {
     rotY: number
   ) => void;
   damagePlayer: (amount: number) => void;
+  regenHealth: (deltaHp: number) => void;
   healPlayerFull: (cost: number) => boolean;
   addMoney: (amount: number) => void;
   spendMoney: (amount: number) => boolean;
@@ -131,7 +132,7 @@ interface GameStoreState {
   buyProperty: (propId: string) => boolean;
   collectPassiveIncome: (amount: number) => void;
 
-  switchCharacter: (charId: CharacterId) => void;
+  switchCharacter: (charId: CharacterId, keepModalOpen?: boolean) => void;
   selectWeapon: (weaponId: WeaponId) => void;
   buyWeapon: (weaponId: WeaponId) => boolean;
   buyAmmo: (weaponId: WeaponId) => boolean;
@@ -174,33 +175,45 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   savedPreview: initialSaved,
   gameSessionId: 0,
 
-  activeCharacterId: initialSaved ? initialSaved.activeCharacterId : 'specter',
+  activeCharacterId: initialSaved ? initialSaved.activeCharacterId : 'sunburst',
   playerPos: initialSaved ? initialSaved.playerPos : { x: 8, y: 0, z: 12 },
   playerRotY: initialSaved ? initialSaved.playerRotY : Math.PI,
   health: initialSaved ? initialSaved.health : 100,
-  armor: initialSaved ? initialSaved.armor : 35,
+  armor: initialSaved ? initialSaved.armor : 50,
   stamina: initialSaved ? initialSaved.stamina : 100,
   money: initialSaved ? initialSaved.money : 2200,
   bankBalance: initialSaved ? initialSaved.bankBalance : 5000,
-  outfitId: initialSaved ? initialSaved.outfitId : PLAYABLE_CHARACTERS.specter.outfitId,
+  outfitId: initialSaved ? initialSaved.outfitId : PLAYABLE_CHARACTERS.sunburst.outfitId,
 
-  ownedVehicleIds: initialSaved ? initialSaved.ownedVehicleIds : ['solaris_spyder', 'veloce_gt', 'mustang_gt'],
+  ownedVehicleIds: initialSaved
+    ? initialSaved.ownedVehicleIds
+    : ['solaris_spyder', 'veloce_gt', 'mustang_gt', 'skyline_r34', 'chestnut_stallion'],
   vehicleColors: initialSaved
     ? initialSaved.vehicleColors
     : {
         solaris_spyder: VEHICLE_SPECS.solaris_spyder.defaultColor,
         veloce_gt: VEHICLE_SPECS.veloce_gt.defaultColor,
         mustang_gt: VEHICLE_SPECS.mustang_gt.defaultColor,
+        skyline_r34: VEHICLE_SPECS.skyline_r34.defaultColor,
+        chestnut_stallion: VEHICLE_SPECS.chestnut_stallion.defaultColor,
       },
   activeVehicleSpecId: initialSaved ? initialSaved.activeVehicleSpecId : 'solaris_spyder',
   spawnRequestedSpecId: null,
 
   ownedProperties: initialSaved ? initialSaved.ownedProperties : [],
-  unlockedWeapons: initialSaved ? initialSaved.unlockedWeapons : ['unarmed', 'pistol'],
-  activeWeaponId: 'pistol',
+  unlockedWeapons: initialSaved ? initialSaved.unlockedWeapons : ['unarmed', 'pistol', 'sword'],
+  activeWeaponId:
+    !initialSaved ||
+    initialSaved.activeCharacterId === 'sunburst' ||
+    initialSaved.activeCharacterId === 'paragon' ||
+    initialSaved.activeCharacterId === 'batman' ||
+    initialSaved.activeCharacterId === 'naruto' ||
+    initialSaved.activeCharacterId === 'goku'
+      ? 'unarmed'
+      : 'pistol',
   weaponAmmo: initialSaved
     ? initialSaved.weaponAmmo
-    : { unarmed: 0, pistol: 60, rifle: 0, shotgun: 0 },
+    : { unarmed: 0, sword: 0, pistol: 60, smg: 0, rifle: 0, shotgun: 0, rpg: 0 },
 
   cameraMode: 'third_far',
   gpsWaypoint: null,
@@ -217,7 +230,16 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
   inventory: initialSaved
     ? initialSaved.inventory
-    : { medkit: 1, armor_vest: 0, repair_kit: 1, nitro_can: 1 },
+    : {
+        medkit: 1,
+        armor_vest: 0,
+        repair_kit: 1,
+        nitro_can: 1,
+        energy_drink: 1,
+        adrenaline_shot: 1,
+        emp_jammer: 0,
+        ammo_crate: 1,
+      },
   settings: initialSaved ? initialSaved.settings : { ...DEFAULT_SETTINGS },
 
   activeModal: 'none',
@@ -284,7 +306,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       spawnRequestedSpecId: null,
       ownedProperties: fresh.ownedProperties,
       unlockedWeapons: fresh.unlockedWeapons,
-      activeWeaponId: 'pistol',
+      activeWeaponId: 'unarmed',
       weaponAmmo: fresh.weaponAmmo,
       completedMissionIds: [],
       activeMissionId: null,
@@ -313,7 +335,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     audioEngine.applySettings(fresh.settings);
     get().pushToast(
       'Welcome to Solaris Bay',
-      'Playing as Specter · Press H or Double-Space to Fly, Tab for Heroes, G for Map.',
+      'Playing as Sunburst · Click/Q Sonic Punch · F Cloud Slam · H Fly · Tab Heroes',
       'info'
     );
   },
@@ -349,7 +371,16 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       spawnRequestedSpecId: null,
       ownedProperties: loaded.ownedProperties,
       unlockedWeapons: loaded.unlockedWeapons,
-      activeWeaponId: loaded.unlockedWeapons.includes('pistol') ? 'pistol' : 'unarmed',
+      activeWeaponId:
+        loaded.activeCharacterId === 'sunburst' ||
+        loaded.activeCharacterId === 'paragon' ||
+        loaded.activeCharacterId === 'batman' ||
+        loaded.activeCharacterId === 'naruto' ||
+        loaded.activeCharacterId === 'goku'
+          ? 'unarmed'
+          : loaded.unlockedWeapons.includes('pistol')
+            ? 'pistol'
+            : 'unarmed',
       weaponAmmo: loaded.weaponAmmo,
       completedMissionIds: loaded.completedMissionIds,
       activeMissionId: loaded.activeMissionId,
@@ -411,6 +442,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       timeOfDay: s.timeOfDay,
       weather: s.weather,
       settings: { ...s.settings },
+      characterRev: 3,
     };
     const ok = persistSaveGame(saveObj);
     if (ok) {
@@ -463,12 +495,31 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   damagePlayer: (amount) => {
     const s = get();
     if (s.screen !== 'playing') return;
-    // Kade tactical perk: +25% ballistic armor mitigation
-    const isKade = s.activeCharacterId === 'kade';
-    let remaining = isKade ? amount * 0.85 : amount;
+    // Goku (-45%), Paragon (-45%), Naruto/Sunburst/Dark Knight (-35%), Kade/Nomad (-15%) ballistic mitigation
+    const isParagon =
+      s.activeCharacterId === 'paragon' ||
+      s.activeCharacterId === 'goku' ||
+      s.outfitId === 'paragon_suit' ||
+      s.outfitId === 'goku_damaged_gi';
+    const isSunburst =
+      s.activeCharacterId === 'sunburst' ||
+      s.activeCharacterId === 'naruto' ||
+      s.activeCharacterId === 'batman' ||
+      s.outfitId === 'sunburst_nika' ||
+      s.outfitId === 'naruto_sage_cloak' ||
+      s.outfitId === 'naruto_tracksuit' ||
+      s.outfitId === 'dark_knight';
+    const isKade = s.activeCharacterId === 'kade' || s.activeCharacterId === 'nomad';
+    let remaining = isParagon
+      ? amount * 0.55
+      : isSunburst
+        ? amount * 0.65
+        : isKade
+          ? amount * 0.85
+          : amount;
     let newArmor = s.armor;
     if (newArmor > 0) {
-      const absorbRatio = isKade ? 0.8 : 0.65;
+      const absorbRatio = isParagon ? 0.78 : isSunburst ? 0.74 : isKade ? 0.8 : 0.65;
       const absorbed = Math.min(newArmor, remaining * absorbRatio);
       newArmor -= absorbed;
       remaining -= absorbed;
@@ -486,6 +537,12 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     } else {
       set({ health: Math.round(newHealth), armor: Math.round(newArmor) });
     }
+  },
+
+  regenHealth: (deltaHp) => {
+    const s = get();
+    if (s.screen !== 'playing' || s.health <= 0 || s.health >= 100) return;
+    set({ health: Math.min(100, Math.round(s.health + deltaHp)) });
   },
 
   healPlayerFull: (cost) => {
@@ -573,7 +630,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     set((s) => ({ bankBalance: s.bankBalance + Math.round(amount) }));
   },
 
-  switchCharacter: (charId) => {
+  switchCharacter: (charId, keepModalOpen = false) => {
     const hero = PLAYABLE_CHARACTERS[charId];
     if (!hero) return;
     const s = get();
@@ -590,11 +647,19 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     set({
       activeCharacterId: charId,
       outfitId: hero.outfitId,
+      activeWeaponId:
+        charId === 'sunburst' ||
+        charId === 'paragon' ||
+        charId === 'batman' ||
+        charId === 'naruto' ||
+        charId === 'goku'
+          ? 'unarmed'
+          : s.activeWeaponId,
       ownedVehicleIds: nextVehicles,
       vehicleColors: nextColors,
       activeVehicleSpecId: hero.personalVehicleId,
       spawnRequestedSpecId: hero.personalVehicleId,
-      activeModal: 'none',
+      activeModal: keepModalOpen ? s.activeModal : 'none',
     });
     audioEngine.playDoorToggle();
     get().pushToast(`Switched to ${hero.name}`, `${hero.perkLabel} · Personal ride delivered.`, 'info');
@@ -656,7 +721,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   },
 
   consumeAmmo: (weaponId) => {
-    if (weaponId === 'unarmed') return true;
+    if (weaponId === 'unarmed' || weaponId === 'sword') return true;
     const s = get();
     const cur = s.weaponAmmo[weaponId] ?? 0;
     if (cur <= 0) return false;
@@ -902,7 +967,9 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         health: Math.min(100, s.health + 60),
         inventory: { ...s.inventory, medkit: count - 1 },
       });
+      audioEngine.playCheckpoint();
       get().pushToast('Trauma Medkit Used', 'Health restored (+60 HP).', 'success');
+      get().saveProgress(true);
       return true;
     }
     if (itemId === 'armor_vest') {
@@ -910,13 +977,67 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         armor: 100,
         inventory: { ...s.inventory, armor_vest: count - 1 },
       });
+      audioEngine.playCheckpoint();
       get().pushToast('Kevlar Vest Equipped', 'Armor restored to 100%.', 'success');
+      get().saveProgress(true);
+      return true;
+    }
+    if (itemId === 'energy_drink') {
+      set({
+        stamina: 100,
+        inventory: { ...s.inventory, energy_drink: count - 1 },
+      });
+      audioEngine.playCheckpoint();
+      window.dispatchEvent(new CustomEvent('citycrime:use_item', { detail: { itemId } }));
+      get().saveProgress(true);
+      return true;
+    }
+    if (itemId === 'adrenaline_shot') {
+      set({
+        health: Math.min(100, s.health + 45),
+        armor: Math.min(100, s.armor + 35),
+        stamina: 100,
+        inventory: { ...s.inventory, adrenaline_shot: count - 1 },
+      });
+      audioEngine.playCheckpoint();
+      get().pushToast('Adrenaline Injected', '+45 HP, +35 Armor & full stamina.', 'success');
+      get().saveProgress(true);
+      return true;
+    }
+    if (itemId === 'emp_jammer') {
+      set({
+        wantedLevel: 0,
+        wantedHeat: 0,
+        inventory: { ...s.inventory, emp_jammer: count - 1 },
+      });
+      audioEngine.playUiClick();
+      get().pushToast('SBPD Dispatch Scrambled', 'Active Wanted Level cleared immediately.', 'success');
+      get().saveProgress(true);
+      return true;
+    }
+    if (itemId === 'ammo_crate') {
+      const nextAmmo = { ...s.weaponAmmo };
+      for (const wid of s.unlockedWeapons) {
+        if (wid === 'unarmed') continue;
+        const spec = WEAPONS[wid];
+        if (spec) {
+          nextAmmo[wid] = (nextAmmo[wid] ?? 0) + spec.magSize * 2;
+        }
+      }
+      set({
+        weaponAmmo: nextAmmo,
+        inventory: { ...s.inventory, ammo_crate: count - 1 },
+      });
+      audioEngine.playMissionComplete();
+      get().pushToast('Ammo Crate Opened', 'Restocked +2 mags across all unlocked weapons.', 'success');
+      get().saveProgress(true);
       return true;
     }
     set({
       inventory: { ...s.inventory, [itemId]: count - 1 },
     });
     window.dispatchEvent(new CustomEvent('citycrime:use_item', { detail: { itemId } }));
+    get().saveProgress(true);
     return true;
   },
 
